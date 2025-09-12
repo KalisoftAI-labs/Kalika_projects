@@ -1,38 +1,22 @@
-# from django.contrib.auth.models import AbstractUser
-# from django.db import models
-# from django.contrib.auth.models import AbstractUser
-
-# class CustomUser(AbstractUser):
-#     first_name = models.CharField(max_length=30, blank=True)  # The problematic field
-#     last_name = models.CharField(max_length=30, blank=True)
-#     groups = models.ManyToManyField(
-#         'auth.Group',
-#         related_name='customuser_set',
-#         blank=True,
-#         help_text='The groups this user belongs to.',
-#         verbose_name='groups',
-#     )
-#     user_permissions = models.ManyToManyField(
-#         'auth.Permission',
-#         related_name='customuser_set',
-#         blank=True,
-#         help_text='Specific permissions for this user.',
-#         verbose_name='user permissions',
-#     )
-
 from django.contrib.auth.models import AbstractUser
 from django.db import models
 
 class CustomUser(AbstractUser):
-    # The fields first_name, last_name, groups, and user_permissions
-    # are inherited from AbstractUser, so they are removed from here to avoid conflicts.
-
-    # This is the new field to define the user's role.
     ROLE_CHOICES = (
         ('Admin', 'Admin'),
         ('User', 'User'),
+        ('PunchOut', 'PunchOut'),
     )
     role = models.CharField(max_length=20, choices=ROLE_CHOICES, default='User')
+    
+    # Buyer identifier ko unique aur indexed banaya gaya hai taaki lookup fast ho
+    buyer_identifier = models.CharField(
+        max_length=255, 
+        blank=True, 
+        null=True, 
+        unique=True, 
+        db_index=True  # Performance ke liye index add kiya gaya hai
+    )
 
     def __str__(self):
         return self.username

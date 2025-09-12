@@ -1,0 +1,33 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Returning to Procurement System</title>
+</head>
+<body onload="document.punchout_form.submit()">
+
+    <noscript>
+        <h1>Processing your PunchOut Request</h1>
+        <p>Your browser does not have JavaScript enabled, which is required for this site to work correctly.</p>
+        <p>Please click the button below to continue.</p>
+        <form name="punchout_form_noscript" action="{{ return_url }}" method="POST">
+            <input type="hidden" name="cxml-urlencoded" value="{{ cxml_payload }}">
+            <input type="submit" value="Return to Procurement System">
+        </form>
+    </noscript>
+
+    <p style="text-align: center; font-family: sans-serif; padding-top: 50px;">
+        Returning your shopping cart to your procurement system... Please wait.
+    </p>
+
+    <form name="punchout_form" action="{{ return_url }}" method="POST" style="display: none;">
+        <input type="hidden" name="cxml-urlencoded" value="{{ cxml_payload }}">
+    </form>
+
+    <script type="text/javascript">
+      // This script automatically submits the form to send the cart back to Ariba.
+      document.punchout_form.submit();
+    </script>
+
+</body>
+</html>

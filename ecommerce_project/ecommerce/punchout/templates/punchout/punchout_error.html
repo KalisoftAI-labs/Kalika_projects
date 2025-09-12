@@ -1,0 +1,30 @@
+{% extends 'catalog/base.html' %}
+{% load static %}
+
+{% block title %}PunchOut Error{% endblock %}
+
+{% block content %}
+<div class="container mx-auto px-4 py-16 text-center">
+    <div class="bg-red-100 border-l-4 border-red-500 text-red-700 p-6 rounded-lg shadow-md max-w-2xl mx-auto">
+        <h1 class="text-3xl font-bold mb-4">PunchOut Error</h1>
+        <p class="text-lg">
+            Sorry, there was a problem processing your PunchOut request.
+        </p>
+        
+        {% if error %}
+            <div class="mt-4 bg-red-200 text-left p-4 rounded">
+                <p class="font-semibold">Error Details:</p>
+                <p class="text-sm font-mono">{{ error }}</p>
+            </div>
+        {% endif %}
+        
+        <p class="mt-6">
+            Please contact support or try again later.
+        </p>
+        
+        <a href="{% url 'catalog:home' %}" class="mt-6 inline-block bg-blue-600 text-white font-bold py-2 px-4 rounded hover:bg-blue-700 transition-colors">
+            Go to Homepage
+        </a>
+    </div>
+</div>
+{% endblock %}
