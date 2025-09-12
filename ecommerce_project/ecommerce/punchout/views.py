@@ -20,36 +20,29 @@ logger = logging.getLogger(__name__)
 
 
 @csrf_exempt
+# punchout/views.py
+
+@csrf_exempt
 def punchout_setup(request: HttpRequest) -> HttpResponse:
     """
     Handles the initial PunchOutSetupRequest from the procurement system (e.g., Ariba).
-    This version is robustly designed to handle both form-encoded data and raw XML posts.
+    This version is updated to look for <ItemOut> tags as per Ariba's request format.
     """
     if request.method != 'POST':
         logger.warning("PunchOut setup accessed with a non-POST method.")
         return render(request, 'punchout/punchout_error.html', {'error': 'Invalid request method.'})
 
     try:
-        # ----- START OF THE NEW FIX -----
-        # This is a simpler and more robust way to get the cXML payload.
-        # It handles both 'cxml-urlencoded' key from form data and raw XML in the body.
-        
         cxml_payload = request.POST.get('cxml-urlencoded')
-
-        # Agar payload POST data me nahi mila (ho sakta hai raw XML bheja gaya ho)
         if not cxml_payload:
-            # Toh hum request.body ko padhenge
             cxml_payload = request.body.decode('utf-8')
         
         if not cxml_payload.strip():
             raise ValueError("cXML payload is empty.")
-        # ----- END OF THE NEW FIX -----
             
         logger.debug(f"Received cXML Payload:\n{cxml_payload}")
         
-        # Parse the cXML payload
         parser = ET.XMLParser(resolve_entities=False)
-        # We use .strip() to remove any leading/trailing whitespace
         root = ET.fromstring(cxml_payload.strip().encode('utf-8'), parser)
         
         header = root.find('.//Header')
@@ -95,13 +88,16 @@ def punchout_setup(request: HttpRequest) -> HttpResponse:
         request.session['punchout_return_url'] = browser_form_post_url
         logger.info(f"PunchOut return URL set to: {browser_form_post_url}")
         
-        item_in_elements = root.findall('.//ItemIn')
+        # ▼▼▼ YAHAN BADLAAV KIYA GAYA HAI ▼▼▼
+        # Ab hum <ItemOut> ko dhoondhenge kyunki Ariba se wahi aa raha hai.
+        item_elements = root.findall('.//ItemOut')
         
-        if item_in_elements:
-            logger.info(f"Automated flow detected with {len(item_in_elements)} items.")
+        if item_elements:
+            logger.info(f"Automated flow detected with {len(item_elements)} items from <ItemOut> tag.")
             CartItem.objects.filter(session_key=request.session.session_key).delete()
             
-            for item in item_in_elements:
+            # Loop ab 'item_elements' par chalega
+            for item in item_elements:
                 item_id_node = item.find('ItemID/SupplierPartID')
                 quantity_node = item.get('quantity')
                 
@@ -123,13 +119,12 @@ def punchout_setup(request: HttpRequest) -> HttpResponse:
             return _prepare_and_return_cart_to_ariba(request)
             
         else:
-            logger.info("Manual flow detected. Redirecting to catalog home.")
+            logger.info("Manual flow detected. No <ItemOut> tags found. Redirecting to catalog home.")
             return redirect('catalog:home')
 
     except Exception as e:
         logger.exception("An error occurred during PunchOut setup.")
         return render(request, 'punchout/punchout_error.html', {'error': str(e)})
-
 
 # _prepare_and_return_cart_to_ariba aur return_cart_to_ariba functions me koi badlaav nahi hai
 # Wo neeche waise hi rahenge jaise pehle the
