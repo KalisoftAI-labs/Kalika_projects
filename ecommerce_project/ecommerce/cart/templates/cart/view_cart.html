@@ -68,7 +68,7 @@
             <a href="{% url 'catalog:home' %}" class="text-white bg-blue-600 hover:bg-blue-700 px-6 py-3 rounded transition">Continue Shopping</a>
             <div class="space-x-4">
                 {% if request.session.is_punchout %}
-                    <form action="{% url 'punchout:return_cart_to_ariba' %}" method="POST" class="inline">
+                    <form action="{% url 'punchout:return-cart' %}" method="POST" class="inline">
                         {% csrf_token %}
                         <button type="submit" class="text-white bg-green-600 hover:bg-green-700 px-6 py-3 rounded transition">Punchout Checkout</button>
                     </form>

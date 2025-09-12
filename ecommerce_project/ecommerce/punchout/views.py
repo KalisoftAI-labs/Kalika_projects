@@ -1,15 +1,14 @@
 # punchout/views.py
 
 from django.shortcuts import render, redirect
-from django.http import HttpResponse, HttpRequest
 from django.views.decorators.csrf import csrf_exempt
 from django.contrib.auth import login
 from django.conf import settings
-from django.utils import timezone
-from lxml import etree as ET
+from django.http import HttpResponseBadRequest
+from lxml import etree
 import logging
-# urllib.parse ab zaroori nahi hai
-# from urllib.parse import unquote_plus 
+from datetime import datetime
+import uuid
 
 from accounts.models import CustomUser
 from cart.models import CartItem
@@ -18,196 +17,206 @@ from .models import PunchOutOrder, PunchOutOrderItem
 
 logger = logging.getLogger(__name__)
 
+# This dictionary maps XML namespaces to prefixes for easier parsing with lxml
+NSMAP = {'cxml': 'cXML'}
 
-@csrf_exempt
-# punchout/views.py
-
-@csrf_exempt
-def punchout_setup(request: HttpRequest) -> HttpResponse:
-    """
-    Handles the initial PunchOutSetupRequest from the procurement system (e.g., Ariba).
-    This version is updated to look for <ItemOut> tags as per Ariba's request format.
-    """
-    if request.method != 'POST':
-        logger.warning("PunchOut setup accessed with a non-POST method.")
-        return render(request, 'punchout/punchout_error.html', {'error': 'Invalid request method.'})
-
+def _parse_cxml(cxml_data):
+    """Parses cXML data, handling potential encoding issues."""
     try:
-        cxml_payload = request.POST.get('cxml-urlencoded')
+        if isinstance(cxml_data, str):
+            cxml_data = cxml_data.encode('utf-8')
+        return etree.fromstring(cxml_data)
+    except etree.XMLSyntaxError as e:
+        logger.error(f"cXML Syntax Error: {e}")
+        return None
+    except Exception as e:
+        logger.error(f"Unexpected error parsing cXML: {e}")
+        return None
+
+def _get_cxml_text(root, path):
+    """Safely gets text content from an element found by an XPath expression."""
+    # ▼▼▼ [CHANGE 2] REMOVED the 'namespaces' argument from the find() method ▼▼▼
+    element = root.find(path)
+    return element.text if element is not None else None
+
+@csrf_exempt
+def punchout_setup(request):
+    if request.method == 'POST':
+        cxml_payload = request.POST.get('cxml-urlencoded', '')
+        logger.info(f"--- START INCOMING CXML PAYLOAD ---\n{cxml_payload}\n--- END INCOMING CXML PAYLOAD ---")
+
         if not cxml_payload:
-            cxml_payload = request.body.decode('utf-8')
-        
-        if not cxml_payload.strip():
-            raise ValueError("cXML payload is empty.")
-            
-        logger.debug(f"Received cXML Payload:\n{cxml_payload}")
-        
-        parser = ET.XMLParser(resolve_entities=False)
-        root = ET.fromstring(cxml_payload.strip().encode('utf-8'), parser)
-        
-        header = root.find('.//Header')
-        from_identity = header.find('.//From/Credential/Identity').text
-        sender_identity = header.find('.//Sender/Credential/Identity').text
-        shared_secret_element = header.find('.//Sender/Credential/SharedSecret')
-        
-        if shared_secret_element is not None:
-            cxml_secret = shared_secret_element.text
-            if not settings.PUNCHOUT_SHARED_SECRET:
-                logger.error("cXML contains a SharedSecret, but PUNCHOUT_SHARED_SECRET is not set in Django settings.")
-                return render(request, 'punchout/punchout_error.html', {'error': 'Server configuration error: Shared secret not set.'})
+            logger.error("PunchOut setup failed: cxml-urlencoded is missing from POST data.")
+            return render(request, 'punchout/punchout_error.html', {'error': 'cXML payload was not received.'})
 
-            if cxml_secret != settings.PUNCHOUT_SHARED_SECRET:
-                logger.error(f"Shared secret mismatch. cXML secret: '{cxml_secret}'")
-                return render(request, 'punchout/punchout_error.html', {'error': 'Authentication failed: Shared secret mismatch.'})
-            logger.info("Shared secret authenticated successfully.")
-        
-        else:
-            logger.info("No shared secret found in cXML. Proceeding with authentication.")
-            
-        user, created = CustomUser.objects.get_or_create(
-            username=from_identity,
-            defaults={
-                'email': f'{from_identity}@punchout.user',
-                'role': 'PunchOut',
-                'buyer_identifier': sender_identity
-            }
-        )
-        if created:
-            user.set_unusable_password()
-            user.save()
-            logger.info(f"Created new PunchOut user: {from_identity}")
-        
-        login(request, user)
-        logger.info(f"User '{from_identity}' logged in for PunchOut session.")
+        root = _parse_cxml(cxml_payload)
+        if root is None:
+            return render(request, 'punchout/punchout_error.html', {'error': 'Failed to parse incoming cXML.'})
 
-        request.session.flush()
-        request.session.create()
+        # --- Credential Verification ---
+        # ▼▼▼ [CHANGE 3] REMOVED the 'cxml:' prefixes from all XPath strings below ▼▼▼
+        shared_secret = _get_cxml_text(root, ".//Credential/SharedSecret")
+        
+        if shared_secret:
+            if shared_secret != settings.PUNCHOUT_SHARED_SECRET:
+                logger.warning("PunchOut setup failed: Invalid SharedSecret provided.")
+                return render(request, 'punchout/punchout_error.html', {'error': 'Authentication failed. Invalid credentials.'})
+
+        # --- Identity and URL Extraction ---
+        from_identity = _get_cxml_text(root, ".//Header/From/Credential/Identity")
+        browser_post_url = _get_cxml_text(root, ".//PunchOutSetupRequest/BrowserFormPost/URL")
+        buyer_cookie = _get_cxml_text(root, ".//PunchOutSetupRequest/BuyerCookie")
+
+        if not all([from_identity, browser_post_url, buyer_cookie]):
+            logger.error(f"PunchOut setup failed: Missing required cXML fields. Found Identity: {from_identity}, URL: {browser_post_url}, BuyerCookie: {buyer_cookie}")
+            return render(request, 'punchout/punchout_error.html', {'error': 'Incomplete cXML data.'})
+
+        # --- User Management ---
+        try:
+            user, created = CustomUser.objects.get_or_create(
+                buyer_identifier=from_identity,
+                defaults={'username': from_identity, 'role': 'PunchOut'}
+            )
+            if created:
+                user.set_unusable_password()
+                user.save()
+                logger.info(f"Created new PunchOut user: {from_identity}")
+            
+            login(request, user)
+            logger.info(f"Logged in PunchOut user: {user.username}")
+
+        except Exception as e:
+            logger.error(f"Error during PunchOut user creation/login: {e}")
+            return render(request, 'punchout/punchout_error.html', {'error': 'User management failed.'})
+
+        # --- Store PunchOut session data ---
         request.session['is_punchout'] = True
+        request.session['punchout_return_url'] = browser_post_url
+        request.session['punchout_buyer_cookie'] = buyer_cookie
+        logger.debug(f"PunchOut session created for user: {user.username}, return_url: {browser_post_url}")
         
-        browser_form_post_url = root.find('.//BrowserFormPost/URL').text
-        request.session['punchout_return_url'] = browser_form_post_url
-        logger.info(f"PunchOut return URL set to: {browser_form_post_url}")
-        
-        # ▼▼▼ YAHAN BADLAAV KIYA GAYA HAI ▼▼▼
-        # Ab hum <ItemOut> ko dhoondhenge kyunki Ariba se wahi aa raha hai.
-        item_elements = root.findall('.//ItemOut')
-        
-        if item_elements:
-            logger.info(f"Automated flow detected with {len(item_elements)} items from <ItemOut> tag.")
+        # --- Handle Automated/Edit Cart Flow ---
+        item_out_elements = root.findall(".//ItemOut")
+        if item_out_elements:
+            logger.info("Detected 'edit' or 'inspect' mode. Populating cart from ItemOut tags.")
+            
             CartItem.objects.filter(session_key=request.session.session_key).delete()
             
-            # Loop ab 'item_elements' par chalega
-            for item in item_elements:
-                item_id_node = item.find('ItemID/SupplierPartID')
-                quantity_node = item.get('quantity')
+            for item_out in item_out_elements:
+                item_id_node = item_out.find(".//ItemID/SupplierPartID")
+                quantity_node = item_out.get("quantity")
                 
-                if item_id_node is not None and quantity_node:
-                    item_code = item_id_node.text
+                if item_id_node is not None and quantity_node is not None:
+                    supplier_part_id = item_id_node.text
                     quantity = int(quantity_node)
-                    
                     try:
-                        product = Product.objects.get(item_code=item_code)
+                        product = Product.objects.get(item_code=supplier_part_id)
                         CartItem.objects.create(
+                            session_key=request.session.session_key,
                             product=product,
-                            quantity=quantity,
-                            session_key=request.session.session_key
+                            quantity=quantity
                         )
-                        logger.info(f"Added product {item_code} (Quantity: {quantity}) to cart automatically.")
                     except Product.DoesNotExist:
-                        logger.warning(f"Product with item_code '{item_code}' not found in database. Skipping.")
+                        logger.warning(f"Product with SupplierPartID '{supplier_part_id}' not found.")
             
             return _prepare_and_return_cart_to_ariba(request)
-            
-        else:
-            logger.info("Manual flow detected. No <ItemOut> tags found. Redirecting to catalog home.")
-            return redirect('catalog:home')
 
-    except Exception as e:
-        logger.exception("An error occurred during PunchOut setup.")
-        return render(request, 'punchout/punchout_error.html', {'error': str(e)})
+        return redirect('catalog:home')
 
-# _prepare_and_return_cart_to_ariba aur return_cart_to_ariba functions me koi badlaav nahi hai
-# Wo neeche waise hi rahenge jaise pehle the
-def return_cart_to_ariba(request: HttpRequest) -> HttpResponse:
+    return HttpResponseBadRequest("This endpoint only supports POST requests.")
+
+
+def return_cart_to_ariba(request):
+    """
+    Initiates the process of returning the cart to the procurement system.
+    This view is typically linked from a 'Checkout' button for PunchOut users.
+    """
     if not request.session.get('is_punchout'):
+        logger.warning("return_cart_to_ariba accessed without a valid PunchOut session.")
         return render(request, 'punchout/punchout_error.html', {'error': 'Not a valid PunchOut session.'})
+
     return _prepare_and_return_cart_to_ariba(request)
 
-def _prepare_and_return_cart_to_ariba(request: HttpRequest) -> HttpResponse:
+
+def _prepare_and_return_cart_to_ariba(request):
     """
-    Helper function to gather cart items, generate the PunchOutOrderMessage cXML,
-    log the transaction in structured tables, and render the form that posts back
-    to the procurement system.
+    Prepares the cXML PunchOutOrderMessage and renders the auto-submitting form.
+    This is a helper function, not a direct view.
     """
+    if not request.session.session_key:
+        request.session.create()
+
     session_key = request.session.session_key
-    cart_items = CartItem.objects.filter(session_key=session_key).select_related('product')
+    cart_items = CartItem.objects.filter(session_key=session_key)
     
     if not cart_items:
-        return render(request, 'punchout/punchout_error.html', {'error': 'Your cart is empty.'})
+        logger.warning("Attempted to return an empty cart to Ariba.")
+        return render(request, 'punchout/punchout_error.html', {'error': 'Your shopping cart is empty.'})
+        
+    return_url = request.session.get('punchout_return_url')
+    buyer_cookie = request.session.get('punchout_buyer_cookie')
 
     total_cost = sum(item.subtotal for item in cart_items)
+
+    timestamp = datetime.utcnow().isoformat() + 'Z'
+    payload_id = f"{int(datetime.utcnow().timestamp())}.{uuid.uuid4()}@yourdomain.com"
+    CXML_CURRENCY = "INR"
+
+    root = etree.Element("cXML", payloadID=payload_id, timestamp=timestamp)
+    header = etree.SubElement(root, "Header")
     
-    # --- cXML Generation ---
-    cxml = ET.Element('cXML', {
-        'payloadID': f"{timezone.now().timestamp()}.{request.user.username}",
-        'timestamp': timezone.now().isoformat()
-    })
-    header = ET.SubElement(cxml, 'Header')
-    ET.SubElement(header, 'From').text = 'Your Company Name'
-    ET.SubElement(header, 'To').text = request.user.buyer_identifier if hasattr(request.user, 'buyer_identifier') else 'UnknownBuyer'
-    sender = ET.SubElement(header, 'Sender')
-    sender_credential = ET.SubElement(sender, 'Credential', {'domain': 'NetworkID'})
-    ET.SubElement(sender_credential, 'Identity').text = 'Your Network ID'
-    message = ET.SubElement(cxml, 'Message')
-    punchout_order_message = ET.SubElement(message, 'PunchOutOrderMessage')
-    ET.SubElement(punchout_order_message, 'BuyerCookie').text = "UserSessionCookie123"
-    pom_header = ET.SubElement(punchout_order_message, 'PunchOutOrderMessageHeader', {'operationAllowed': 'edit'})
-    ET.SubElement(pom_header, 'Total', {'currency': 'INR'}).text = str(total_cost)
+    message = etree.SubElement(root, "Message")
+    poom = etree.SubElement(message, "PunchOutOrderMessage")
+    etree.SubElement(poom, "BuyerCookie").text = buyer_cookie
+    
+    poom_header = etree.SubElement(poom, "PunchOutOrderMessageHeader", operationAllowed="create")
+    total_element = etree.SubElement(poom_header, "Total")
+    etree.SubElement(total_element, "Money", currency=CXML_CURRENCY).text = str(round(total_cost, 2))
 
     for item in cart_items:
-        item_in = ET.SubElement(punchout_order_message, 'ItemIn', {'quantity': str(item.quantity)})
-        item_id = ET.SubElement(item_in, 'ItemID')
-        ET.SubElement(item_id, 'SupplierPartID').text = item.product.item_code
-        item_detail = ET.SubElement(item_in, 'ItemDetail')
-        ET.SubElement(item_detail, 'UnitPrice', {'currency': 'INR'}).text = str(item.product.price)
+        item_in = etree.SubElement(poom, "ItemIn", quantity=str(item.quantity))
+        item_id = etree.SubElement(item_in, "ItemID")
+        etree.SubElement(item_id, "SupplierPartID").text = item.product.item_code
         
-        # ▼▼▼ THIS IS THE CORRECTED LINE ▼▼▼
-        # We define the official XML namespace and use it to correctly create the 'xml:lang' attribute.
-        XML_NAMESPACE = "http://www.w3.org/XML/1998/namespace"
-        ET.SubElement(item_detail, 'Description', {f'{{{XML_NAMESPACE}}}lang': 'en'}).text = item.product.product_title
-        
-        ET.SubElement(item_detail, 'UnitOfMeasure').text = item.product.unit_of_measure or 'EA'
-        classification = ET.SubElement(item_detail, 'Classification', {'domain': 'UNSPSC'})
-        classification.text = item.product.unspsc or '00000000'
-    
-    final_cxml_payload = ET.tostring(cxml, pretty_print=True, xml_declaration=True, encoding='UTF-8').decode('utf-8')
-    logger.debug(f"Returning cXML to Ariba:\n{final_cxml_payload}")
+        item_detail = etree.SubElement(item_in, "ItemDetail")
+        unit_price = etree.SubElement(item_detail, "UnitPrice")
+        etree.SubElement(unit_price, "Money", currency=CXML_CURRENCY).text = str(round(item.product.price, 2))
+        etree.SubElement(item_detail, "Description", **{'{http://www.w3.org/XML/1998/namespace}lang': 'en'}).text = item.product.product_title
+        etree.SubElement(item_detail, "UnitOfMeasure").text = item.product.unit_of_measure or 'EA'
+        if item.product.unspsc:
+            etree.SubElement(item_detail, "Classification", domain="UNSPSC").text = item.product.unspsc
+            
+    final_cxml_payload = etree.tostring(root, pretty_print=True, xml_declaration=True, encoding='UTF-8').decode('utf-8')
+    logger.info(f"Generated PunchOutOrderMessage for user {request.user}:\n{final_cxml_payload}")
 
-    # --- Structured Data Logging ---
-    order_log = PunchOutOrder.objects.create(
-        user=request.user,
-        total_cost=total_cost,
-        cxml_payload=final_cxml_payload
-    )
-    logger.info(f"Created PunchOutOrder log with ID: {order_log.id}")
+    try:
+        logged_in_user = request.user if request.user.is_authenticated else None
 
-    for item in cart_items:
-        PunchOutOrderItem.objects.create(
-            order=order_log,
-            product_title=item.product.product_title,
-            item_code=item.product.item_code,
-            quantity=item.quantity,
-            unit_price=item.product.price,
-            subtotal=item.subtotal,
-            unit_of_measure=item.product.unit_of_measure or 'EA',
-            unspsc=item.product.unspsc or '00000000'
+        order_log = PunchOutOrder.objects.create(
+            user=logged_in_user,
+            total_cost=total_cost,
+            cxml_payload=final_cxml_payload
         )
-    logger.info(f"Logged {len(cart_items)} items for PunchOutOrder ID: {order_log.id}")
-    
-    # --- Session Cleanup and Return to Ariba ---
-    return_url = request.session.get('punchout_return_url', '#')
+
+        for item in cart_items:
+            PunchOutOrderItem.objects.create(
+                order=order_log,
+                product_title=item.product.product_title,
+                item_code=item.product.item_code,
+                quantity=item.quantity,
+                unit_price=item.product.price,
+                subtotal=item.subtotal,
+                unit_of_measure=item.product.unit_of_measure,
+                unspsc=item.product.unspsc
+            )
+        logger.info(f"Successfully logged PunchOutOrder {order_log.id} for user: {logged_in_user}")
+    except Exception as e:
+        logger.error(f"Failed to log PunchOutOrder to database: {e}")
+        return render(request, 'punchout/punchout_error.html', {'error': 'Failed to log the transaction before returning.'})
+
+    cart_items.delete()
     request.session.flush()
-    
+
     context = {
         'return_url': return_url,
         'cxml_payload': final_cxml_payload

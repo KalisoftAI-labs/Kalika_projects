@@ -41,17 +41,22 @@ def add_to_cart(request, item_id):
 
     return redirect('cart:view_cart')
 
+# cart/views.py (Corrected)
+
 def view_cart(request):
     """Display the cart with S3 image URLs."""
     if not request.session.session_key:
         request.session.create()
     session_key = request.session.session_key
     cart_items = CartItem.objects.filter(session_key=session_key)
-    total = sum(item.quantity * item.product.price for item in cart_items)
+    total = sum(item.subtotal for item in cart_items) # You can even use the property here to make it cleaner
+
     for item in cart_items:
-        item.subtotal = item.quantity * item.product.price
+        # The problematic line has been removed.
+        # The template can now access item.subtotal directly from the model property.
         item.product.s3_image_url = get_s3_presigned_url(settings.AWS_S3_BUCKET_NAME, item.product.large_image) if item.product.large_image else None
         logger.debug(f"Cart item {item.id}: s3_image_url = {item.product.s3_image_url}")
+    
     return render(request, 'cart/view_cart.html', {
         'cart_items': cart_items,
         'total': total
