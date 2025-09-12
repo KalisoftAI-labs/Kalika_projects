@@ -8,40 +8,49 @@ from django.conf import settings
 from django.utils import timezone
 from lxml import etree as ET
 import logging
+# urllib.parse ab zaroori nahi hai
+# from urllib.parse import unquote_plus 
 
 from accounts.models import CustomUser
 from cart.models import CartItem
 from catalog.models import Product
-from .models import PunchOutOrder, PunchOutOrderItem # PunchOutOrderItem ko import karein
+from .models import PunchOutOrder, PunchOutOrderItem
 
 logger = logging.getLogger(__name__)
 
-# punchout_setup function (Isme koi badlaav nahi hai)
+
 @csrf_exempt
 def punchout_setup(request: HttpRequest) -> HttpResponse:
     """
     Handles the initial PunchOutSetupRequest from the procurement system (e.g., Ariba).
-    - Validates the request and shared secret (if provided).
-    - Authenticates or creates a user for the PunchOut session.
-    - Handles two flows:
-        1. Automated Flow: If the cXML contains item details, it adds them to the cart
-           and immediately returns the cart to the procurement system.
-        2. Manual Flow: If no item details are present, it redirects the user to the
-           catalog to start shopping.
+    This version is robustly designed to handle both form-encoded data and raw XML posts.
     """
     if request.method != 'POST':
         logger.warning("PunchOut setup accessed with a non-POST method.")
         return render(request, 'punchout/punchout_error.html', {'error': 'Invalid request method.'})
 
     try:
-        cxml_payload = request.POST.get('cxml-urlencoded', request.body.decode('utf-8'))
+        # ----- START OF THE NEW FIX -----
+        # This is a simpler and more robust way to get the cXML payload.
+        # It handles both 'cxml-urlencoded' key from form data and raw XML in the body.
+        
+        cxml_payload = request.POST.get('cxml-urlencoded')
+
+        # Agar payload POST data me nahi mila (ho sakta hai raw XML bheja gaya ho)
         if not cxml_payload:
+            # Toh hum request.body ko padhenge
+            cxml_payload = request.body.decode('utf-8')
+        
+        if not cxml_payload.strip():
             raise ValueError("cXML payload is empty.")
+        # ----- END OF THE NEW FIX -----
             
         logger.debug(f"Received cXML Payload:\n{cxml_payload}")
         
+        # Parse the cXML payload
         parser = ET.XMLParser(resolve_entities=False)
-        root = ET.fromstring(cxml_payload.encode('utf-8'), parser)
+        # We use .strip() to remove any leading/trailing whitespace
+        root = ET.fromstring(cxml_payload.strip().encode('utf-8'), parser)
         
         header = root.find('.//Header')
         from_identity = header.find('.//From/Credential/Identity').text
@@ -79,7 +88,7 @@ def punchout_setup(request: HttpRequest) -> HttpResponse:
         logger.info(f"User '{from_identity}' logged in for PunchOut session.")
 
         request.session.flush()
-        request.session.create() # Create a new session key after flushing
+        request.session.create()
         request.session['is_punchout'] = True
         
         browser_form_post_url = root.find('.//BrowserFormPost/URL').text
@@ -121,17 +130,13 @@ def punchout_setup(request: HttpRequest) -> HttpResponse:
         logger.exception("An error occurred during PunchOut setup.")
         return render(request, 'punchout/punchout_error.html', {'error': str(e)})
 
-# return_cart_to_ariba function (Isme koi badlaav nahi hai)
+
+# _prepare_and_return_cart_to_ariba aur return_cart_to_ariba functions me koi badlaav nahi hai
+# Wo neeche waise hi rahenge jaise pehle the
 def return_cart_to_ariba(request: HttpRequest) -> HttpResponse:
-    """
-    View function called when the user clicks 'Punchout Checkout' in the cart.
-    This is the trigger for the manual shopping flow.
-    """
     if not request.session.get('is_punchout'):
         return render(request, 'punchout/punchout_error.html', {'error': 'Not a valid PunchOut session.'})
-    
     return _prepare_and_return_cart_to_ariba(request)
-
 
 def _prepare_and_return_cart_to_ariba(request: HttpRequest) -> HttpResponse:
     """
@@ -147,7 +152,7 @@ def _prepare_and_return_cart_to_ariba(request: HttpRequest) -> HttpResponse:
 
     total_cost = sum(item.subtotal for item in cart_items)
     
-    # --- cXML Generation (No changes here) ---
+    # --- cXML Generation ---
     cxml = ET.Element('cXML', {
         'payloadID': f"{timezone.now().timestamp()}.{request.user.username}",
         'timestamp': timezone.now().isoformat()
@@ -170,7 +175,12 @@ def _prepare_and_return_cart_to_ariba(request: HttpRequest) -> HttpResponse:
         ET.SubElement(item_id, 'SupplierPartID').text = item.product.item_code
         item_detail = ET.SubElement(item_in, 'ItemDetail')
         ET.SubElement(item_detail, 'UnitPrice', {'currency': 'INR'}).text = str(item.product.price)
-        ET.SubElement(item_detail, 'Description', {'xml:lang': 'en'}).text = item.product.product_title
+        
+        # ▼▼▼ THIS IS THE CORRECTED LINE ▼▼▼
+        # We define the official XML namespace and use it to correctly create the 'xml:lang' attribute.
+        XML_NAMESPACE = "http://www.w3.org/XML/1998/namespace"
+        ET.SubElement(item_detail, 'Description', {f'{{{XML_NAMESPACE}}}lang': 'en'}).text = item.product.product_title
+        
         ET.SubElement(item_detail, 'UnitOfMeasure').text = item.product.unit_of_measure or 'EA'
         classification = ET.SubElement(item_detail, 'Classification', {'domain': 'UNSPSC'})
         classification.text = item.product.unspsc or '00000000'
@@ -178,16 +188,14 @@ def _prepare_and_return_cart_to_ariba(request: HttpRequest) -> HttpResponse:
     final_cxml_payload = ET.tostring(cxml, pretty_print=True, xml_declaration=True, encoding='UTF-8').decode('utf-8')
     logger.debug(f"Returning cXML to Ariba:\n{final_cxml_payload}")
 
-    # --- Structured Data Logging (Naya Logic Yahan Hai) ---
-    # 1. Pehle PunchOutOrder record banayein
+    # --- Structured Data Logging ---
     order_log = PunchOutOrder.objects.create(
         user=request.user,
         total_cost=total_cost,
-        cxml_payload=final_cxml_payload # Raw cXML abhi bhi save ho raha hai
+        cxml_payload=final_cxml_payload
     )
     logger.info(f"Created PunchOutOrder log with ID: {order_log.id}")
 
-    # 2. Phir har cart item ke liye PunchOutOrderItem record banayein
     for item in cart_items:
         PunchOutOrderItem.objects.create(
             order=order_log,
