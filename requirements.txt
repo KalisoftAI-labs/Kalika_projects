@@ -1,0 +1,9 @@
+streamlit
+schedule
+boto3
+faiss-cpu
+pdfplumber
+langchain
+langchain_community
+sentence-transformers  
+pywhatkit
