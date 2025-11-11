@@ -75,7 +75,7 @@ def punchout_setup(request):
         try:
             user, created = CustomUser.objects.get_or_create(
                 buyer_identifier=from_identity,
-                defaults={'username': from_identity, 'role': 'PunchOut'}
+                defaults={'username': from_identity} # <-- 'role' removed
             )
             if created:
                 user.set_unusable_password()
