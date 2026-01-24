@@ -1,0 +1,321 @@
+================================================================================
+PUNCHOUT TESTING - POSTMAN STEPS FOR CREATE & EDIT MODES
+================================================================================
+
+PREREQUISITE: Server running at http://127.0.0.1:8000/
+
+
+================================================================================
+TEST 1: CREATE MODE (Standard Shopping Flow)
+================================================================================
+
+PURPOSE: User browses catalog, adds items, then checks out
+
+POSTMAN SETUP:
+--------------
+Method: POST
+URL: http://127.0.0.1:8000/punchout/setup/
+Body Type: x-www-form-urlencoded
+Key: cxml-urlencoded
+Value: (paste XML below)
+
+XML PAYLOAD:
+------------
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE cXML SYSTEM "http://xml.cxml.org/schemas/cXML/1.2.014/cXML.dtd">
+<cXML version="1.2.014" payloadID="create-12345@ariba.com" timestamp="2026-01-23T12:00:00-08:00">
+    <Header>
+        <From>
+            <Credential domain="NetworkID">
+                <Identity>AN01000000123</Identity>
+            </Credential>
+        </From>
+        <To>
+            <Credential domain="DUNS">
+                <Identity>987654321</Identity>
+            </Credential>
+        </To>
+        <Sender>
+            <Credential domain="NetworkID">
+                <Identity>AN01000000123</Identity>
+                <SharedSecret>response_secret</SharedSecret>
+            </Credential>
+            <UserAgent>Ariba Procurement Solution</UserAgent>
+        </Sender>
+    </Header>
+    <Request>
+        <PunchOutSetupRequest operation="create">
+            <BuyerCookie>CREATE_MODE_COOKIE_456</BuyerCookie>
+            <Extrinsic name="User">jane.doe@company.com</Extrinsic>
+            <Extrinsic name="UniqueName">Jane Doe</Extrinsic>
+            <BrowserFormPost>
+                <URL>https://webhook.site/c1b9e33a-08e9-40b4-a488-d1552ddfb9cb</URL>
+            </BrowserFormPost>
+            <SupplierSetup>
+                <URL>http://127.0.0.1:8000/catalog/</URL>
+            </SupplierSetup>
+        </PunchOutSetupRequest>
+    </Request>
+</cXML>
+
+EXPECTED RESPONSE:
+------------------
+<?xml version='1.0' encoding='UTF-8'?>
+<!DOCTYPE cXML SYSTEM "http://xml.cxml.org/schemas/cXML/1.2.014/cXML.dtd">
+<cXML version="1.2.014" payloadID="..." timestamp="...">
+    <Response>
+        <Status code="200" text="success">PunchOut Setup Success</Status>
+        <PunchOutSetupResponse>
+            <StartPage>
+                <URL>https://kalikaindia.com/?punchout_session=...</URL>
+            </StartPage>
+        </PunchOutSetupResponse>
+    </Response>
+</cXML>
+
+NEXT STEPS (Manual Browser Test):
+----------------------------------
+1. Copy sessionid cookie from Postman (Cookies tab)
+2. Open browser to http://127.0.0.1:8000/
+3. Paste sessionid cookie via F12 > Application > Cookies
+4. Browse catalog and add items to cart
+5. Go to cart: http://127.0.0.1:8000/cart/
+6. Verify "Punchout Checkout" button is visible
+7. Click "Punchout Checkout"
+8. Check webhook.site for PunchOutOrderMessage
+
+SERVER LOGS TO VERIFY:
+----------------------
+- "Logged in PunchOut user: AN01000000123"
+- "PunchOut session created for user"
+- "Sending PunchOutSetupResponse"
+
+
+================================================================================
+TEST 2: EDIT MODE (Pre-populated Cart)
+================================================================================
+
+PURPOSE: Items pre-loaded from SAP, automatically returned
+
+POSTMAN SETUP:
+--------------
+Method: POST
+URL: http://127.0.0.1:8000/punchout/setup/
+Body Type: x-www-form-urlencoded
+Key: cxml-urlencoded
+Value: (paste XML below)
+
+XML PAYLOAD:
+------------
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE cXML SYSTEM "http://xml.cxml.org/schemas/cXML/1.2.014/cXML.dtd">
+<cXML version="1.2.014" payloadID="edit-test-12345@ariba.com" timestamp="2026-01-23T12:00:00-08:00">
+    <Header>
+        <From>
+            <Credential domain="NetworkID">
+                <Identity>AN01000000123</Identity>
+            </Credential>
+        </From>
+        <To>
+            <Credential domain="DUNS">
+                <Identity>987654321</Identity>
+            </Credential>
+        </To>
+        <Sender>
+            <Credential domain="NetworkID">
+                <Identity>AN01000000123</Identity>
+                <SharedSecret>response_secret</SharedSecret>
+            </Credential>
+            <UserAgent>Ariba Procurement Solution</UserAgent>
+        </Sender>
+    </Header>
+    <Request>
+        <PunchOutSetupRequest operation="edit">
+            <BuyerCookie>EDIT_MODE_TEST_COOKIE_789</BuyerCookie>
+            <Extrinsic name="User">john.doe@company.com</Extrinsic>
+            <Extrinsic name="UniqueName">John Doe</Extrinsic>
+            
+            <ItemOut quantity="5">
+                <ItemID>
+                    <SupplierPartID>N69PC-001-0026</SupplierPartID>
+                </ItemID>
+                <ItemDetail>
+                    <UnitPrice>
+                        <Money currency="INR">25.00</Money>
+                    </UnitPrice>
+                    <Description>COTTON GLOVES FOR EPOXY (PAIR)</Description>
+                </ItemDetail>
+            </ItemOut>
+            
+            <ItemOut quantity="10">
+                <ItemID>
+                    <SupplierPartID>N69PC-001-0007</SupplierPartID>
+                </ItemID>
+                <ItemDetail>
+                    <UnitPrice>
+                        <Money currency="INR">1.15</Money>
+                    </UnitPrice>
+                    <Description>POLYTHENE GLOVES</Description>
+                </ItemDetail>
+            </ItemOut>
+            
+            <ItemOut quantity="3">
+                <ItemID>
+                    <SupplierPartID>N69EG-019-0014</SupplierPartID>
+                </ItemID>
+                <ItemDetail>
+                    <UnitPrice>
+                        <Money currency="INR">15.00</Money>
+                    </UnitPrice>
+                    <Description>GELCOAT HAND SLEEVE</Description>
+                </ItemDetail>
+            </ItemOut>
+            
+            <BrowserFormPost>
+                <URL>https://webhook.site/c1b9e33a-08e9-40b4-a488-d1552ddfb9cb</URL>
+            </BrowserFormPost>
+            <SupplierSetup>
+                <URL>http://127.0.0.1:8000/catalog/</URL>
+            </SupplierSetup>
+        </PunchOutSetupRequest>
+    </Request>
+</cXML>
+
+EXPECTED RESPONSE:
+------------------
+HTML page with auto-submit form that immediately POSTs to webhook.site
+
+NEXT STEPS:
+-----------
+1. Response shows "Returning order to procurement system..."
+2. Check webhook.site - should receive PunchOutOrderMessage
+3. Verify XML contains all 3 items with correct quantities
+4. No manual shopping required - automatic return
+
+SERVER LOGS TO VERIFY:
+----------------------
+- "Detected 'edit' or 'inspect' mode. Found 3 ItemOut elements"
+- "Using session_key: ..."
+- "Processing ItemOut: N69PC-001-0026 x 5"
+- "✓ Added to cart: COTTON GLOVES FOR EPOXY (PAIR) x 5"
+- "✓ Added to cart: POLYTHENE GLOVES x 10"
+- "✓ Added to cart: GELCOAT HAND SLEEVE x 3"
+- "Edit mode: Successfully added 3/3 items to cart. Returning to Ariba..."
+- "Generated PunchOutOrderMessage for user AN01000000123"
+- "Successfully logged PunchOutOrder ... for user: AN01000000123"
+
+EXPECTED TOTALS:
+----------------
+5 x Rs.25.00 = Rs.125.00
+10 x Rs.1.15 = Rs.11.50
+3 x Rs.15.00 = Rs.45.00
+----------------------------
+TOTAL = Rs.181.50
+
+
+================================================================================
+DATABASE VERIFICATION COMMANDS
+================================================================================
+
+1. Check all PunchOut orders:
+------------------------------
+python manage.py shell -c "from punchout.models import PunchOutOrder; orders = PunchOutOrder.objects.all().order_by('-created_at')[:5]; [print(f'\nOrder #{o.id}\nUser: {o.user}\nTotal: Rs.{o.total_cost}\nCreated: {o.created_at}\n---') for o in orders]"
+
+2. Check specific order items:
+------------------------------
+python manage.py shell -c "from punchout.models import PunchOutOrder, PunchOutOrderItem; order = PunchOutOrder.objects.latest('created_at'); print(f'\n=== Latest Order ==='); print(f'Order ID: {order.id}'); print(f'User: {order.user}'); print(f'Total: Rs.{order.total_cost}'); print(f'\nItems:'); items = PunchOutOrderItem.objects.filter(order=order); [print(f'{i.quantity}x {i.product_title} @ Rs.{i.unit_price} = Rs.{i.subtotal}') for i in items]"
+
+3. Check cart items (during create mode):
+-----------------------------------------
+python manage.py shell -c "from cart.models import CartItem; items = CartItem.objects.all()[:10]; [print(f'Session: {i.session_key[:10]}... | {i.quantity}x {i.product.product_title}') for i in items]"
+
+
+================================================================================
+TROUBLESHOOTING
+================================================================================
+
+Issue: "Error validating your PunchOut request"
+-----------------------------------------------
+- Verify SharedSecret matches: "response_secret"
+- Check XML has all required fields: Identity, BuyerCookie, BrowserFormPost URL
+- Ensure Content-Type is application/x-www-form-urlencoded
+- Verify key name is exactly "cxml-urlencoded"
+
+Issue: No logs in terminal
+---------------------------
+- Confirm server is running: python manage.py runserver
+- Check URL is correct: http://127.0.0.1:8000/punchout/setup/
+- Verify POST method is selected
+- Look for "Forbidden (403)" - might be CSRF issue (should be exempt)
+
+Issue: Products not found (edit mode)
+--------------------------------------
+- Check product codes exist in database
+- Verify exact match: Product.objects.filter(item_code='N69PC-001-0026')
+- Use actual product codes from your database
+
+Issue: Webhook.site shows nothing
+----------------------------------
+- Check if webhook URL is correct in XML
+- Verify auto-submit form rendered (check Postman response)
+- Look for JavaScript errors in browser console
+- Check if webhook.site session expired (generate new URL)
+
+
+================================================================================
+SUCCESS CRITERIA
+================================================================================
+
+CREATE MODE:
+✓ PunchOutSetupResponse returned with StartPage URL
+✓ Session variables set (is_punchout=True)
+✓ Can manually browse and add items to cart
+✓ "Punchout Checkout" button visible in cart
+✓ Clicking checkout sends XML to webhook
+✓ Database records created
+
+EDIT MODE:
+✓ Items automatically added to cart from ItemOut elements
+✓ No browsing required - immediate return
+✓ PunchOutOrderMessage generated with all items
+✓ Total calculated correctly (Rs.181.50)
+✓ Webhook receives POST with complete XML
+✓ Database records created
+✓ Cart cleared after return
+✓ Session flushed
+
+
+================================================================================
+KEY DIFFERENCES BETWEEN MODES
+================================================================================
+
+CREATE MODE:
+- operation="create"
+- No ItemOut elements
+- Returns PunchOutSetupResponse (XML)
+- User must browse catalog manually
+- User adds items to cart
+- User clicks "Punchout Checkout"
+- Then returns to SAP
+
+EDIT MODE:
+- operation="edit"
+- Contains ItemOut elements
+- Immediately returns HTML auto-submit form
+- Cart pre-populated automatically
+- No user interaction needed
+- Instant return to SAP with items
+
+
+================================================================================
+WEBHOOK.SITE SETUP
+================================================================================
+
+1. Go to: https://webhook.site/
+2. Copy your unique URL (e.g., https://webhook.site/c1b9e33a-08e9-40b4-a488-d1552ddfb9cb)
+3. Replace BrowserFormPost URL in XML with your webhook URL
+4. After testing, check webhook.site inbox for received POST
+5. Inspect "Request Content" to see the full PunchOutOrderMessage XML
+
+
+================================================================================

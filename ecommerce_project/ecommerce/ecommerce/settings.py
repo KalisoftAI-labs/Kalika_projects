@@ -121,7 +121,12 @@ ARIBA_NETWORK_ID = os.getenv('ARIBA_NETWORK_ID')
 ARIBA_ENDPOINT = 'https://test.ariba.com/punchout/cxml/setup'
 
 # --- Local Development Security Settings ---
-SECURE_PROXY_SSL_HEADER = None
+#SECURE_PROXY_SSL_HEADER = None
 SECURE_SSL_REDIRECT = False
 SESSION_COOKIE_SECURE = False
 CSRF_COOKIE_SECURE = False
+
+# --- Production Security Settings --- Crucial for deployment security
+SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
+USE_X_FORWARDED_HOST = True
+USE_X_FORWARDED_PORT = True

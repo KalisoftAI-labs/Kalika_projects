@@ -4,7 +4,7 @@ from django.shortcuts import render, redirect
 from django.views.decorators.csrf import csrf_exempt
 from django.contrib.auth import login
 from django.conf import settings
-from django.http import HttpResponseBadRequest
+from django.http import HttpResponseBadRequest, HttpResponseRedirect, HttpResponse
 from lxml import etree
 import logging
 from datetime import datetime
@@ -39,14 +39,58 @@ def _get_cxml_text(root, path):
     element = root.find(path)
     return element.text if element is not None else None
 
+def _generate_punchout_setup_response(start_page_url):
+    """
+    Generates a cXML PunchOutSetupResponse with proper DOCTYPE and structure.
+    This is sent back to SAP Ariba after receiving PunchOutSetupRequest.
+    """
+    timestamp = datetime.utcnow().isoformat() + 'Z'
+    payload_id = f"{int(datetime.utcnow().timestamp())}.{uuid.uuid4()}@kalikaindia.com"
+    
+    # Create root element with proper attributes
+    root = etree.Element(
+        "cXML",
+        payloadID=payload_id,
+        timestamp=timestamp,
+        version="1.2.014"
+    )
+    
+    # Add Response element
+    response = etree.SubElement(root, "Response")
+    status = etree.SubElement(response, "Status", code="200", text="success")
+    
+    # Add PunchOutSetupResponse
+    punchout_setup_response = etree.SubElement(response, "PunchOutSetupResponse")
+    start_page = etree.SubElement(punchout_setup_response, "StartPage")
+    url_element = etree.SubElement(start_page, "URL")
+    url_element.text = start_page_url
+    
+    # Generate XML with DOCTYPE declaration
+    doctype = '<!DOCTYPE cXML SYSTEM "http://xml.cXML.org/schemas/cXML/1.2.014/cXML.dtd">'
+    xml_string = etree.tostring(
+        root,
+        pretty_print=True,
+        xml_declaration=True,
+        encoding='UTF-8',
+        doctype=doctype
+    ).decode('utf-8')
+    
+    return xml_string
+
 @csrf_exempt
 def punchout_setup(request):
     if request.method == 'POST':
         cxml_payload = request.POST.get('cxml-urlencoded', '')
+        
+        if not cxml_payload:
+            # Try reading from request body directly
+            cxml_payload = request.body.decode('utf-8')
+            logger.info("cxml-urlencoded not found in POST, using request.body")
+        
         logger.info(f"--- START INCOMING CXML PAYLOAD ---\n{cxml_payload}\n--- END INCOMING CXML PAYLOAD ---")
 
         if not cxml_payload:
-            logger.error("PunchOut setup failed: cxml-urlencoded is missing from POST data.")
+            logger.error("PunchOut setup failed: No cXML payload received (neither in POST data nor body).")
             return render(request, 'punchout/punchout_error.html', {'error': 'cXML payload was not received.'})
 
         root = _parse_cxml(cxml_payload)
@@ -93,15 +137,25 @@ def punchout_setup(request):
         request.session['is_punchout'] = True
         request.session['punchout_return_url'] = browser_post_url
         request.session['punchout_buyer_cookie'] = buyer_cookie
+        request.session['punchout_from_identity'] = from_identity
         logger.debug(f"PunchOut session created for user: {user.username}, return_url: {browser_post_url}")
         
         # --- Handle Automated/Edit Cart Flow ---
         item_out_elements = root.findall(".//ItemOut")
         if item_out_elements:
-            logger.info("Detected 'edit' or 'inspect' mode. Populating cart from ItemOut tags.")
+            logger.info(f"Detected 'edit' or 'inspect' mode. Found {len(item_out_elements)} ItemOut elements. Populating cart...")
             
-            CartItem.objects.filter(session_key=request.session.session_key).delete()
+            # Ensure session is created before using session_key
+            if not request.session.session_key:
+                request.session.create()
             
+            session_key = request.session.session_key
+            logger.info(f"Using session_key: {session_key}")
+            
+            # Clear existing cart items
+            CartItem.objects.filter(session_key=session_key).delete()
+            
+            items_added = 0
             for item_out in item_out_elements:
                 item_id_node = item_out.find(".//ItemID/SupplierPartID")
                 quantity_node = item_out.get("quantity")
@@ -109,21 +163,36 @@ def punchout_setup(request):
                 if item_id_node is not None and quantity_node is not None:
                     supplier_part_id = item_id_node.text
                     quantity = int(quantity_node)
+                    logger.info(f"Processing ItemOut: {supplier_part_id} x {quantity}")
+                    
                     try:
                         product = Product.objects.get(item_code=supplier_part_id)
-                        CartItem.objects.create(
-                            session_key=request.session.session_key,
+                        cart_item = CartItem.objects.create(
+                            session_key=session_key,
                             product=product,
                             quantity=quantity
                         )
+                        items_added += 1
+                        logger.info(f"✓ Added to cart: {product.product_title} x {quantity}")
                     except Product.DoesNotExist:
-                        logger.warning(f"Product with SupplierPartID '{supplier_part_id}' not found.")
+                        logger.warning(f"✗ Product with SupplierPartID '{supplier_part_id}' not found in database.")
+                    except Exception as e:
+                        logger.error(f"✗ Error adding product {supplier_part_id} to cart: {e}")
             
+            logger.info(f"Edit mode: Successfully added {items_added}/{len(item_out_elements)} items to cart. Returning to Ariba...")
             return _prepare_and_return_cart_to_ariba(request)
 
-        return redirect('catalog:home')
+        # --- Generate and return PunchOutSetupResponse ---
+        session_id = request.session.session_key
+        start_page_url = f"https://kalikaindia.com/?punchout_session={session_id}"
+        
+        setup_response_xml = _generate_punchout_setup_response(start_page_url)
+        logger.info(f"Sending PunchOutSetupResponse:\n{setup_response_xml}")
+        
+        return HttpResponse(setup_response_xml, content_type='text/xml; charset=utf-8')
 
-    return HttpResponseBadRequest("This endpoint only supports POST requests.")
+    #return HttpResponseBadRequest("This endpoint only supports POST requests.") #Undo this if issue still persists
+    return HttpResponseRedirect("https://kalikaindia.com/")
 
 
 def return_cart_to_ariba(request):
@@ -155,16 +224,44 @@ def _prepare_and_return_cart_to_ariba(request):
         
     return_url = request.session.get('punchout_return_url')
     buyer_cookie = request.session.get('punchout_buyer_cookie')
+    from_identity = request.session.get('punchout_from_identity', 'UNKNOWN')
 
     total_cost = sum(item.subtotal for item in cart_items)
 
     timestamp = datetime.utcnow().isoformat() + 'Z'
-    payload_id = f"{int(datetime.utcnow().timestamp())}.{uuid.uuid4()}@yourdomain.com"
+    payload_id = f"{int(datetime.utcnow().timestamp())}.{uuid.uuid4()}@kalikaindia.com"
     CXML_CURRENCY = "INR"
-
-    root = etree.Element("cXML", payloadID=payload_id, timestamp=timestamp)
+    
+    # Create cXML root with proper attributes
+    root = etree.Element(
+        "cXML",
+        payloadID=payload_id,
+        timestamp=timestamp,
+        version="1.2.014"
+    )
+    
+    # Build Header with From, To, and Sender
     header = etree.SubElement(root, "Header")
     
+    # From - The buyer (SAP Ariba)
+    from_elem = etree.SubElement(header, "From")
+    from_cred = etree.SubElement(from_elem, "Credential", domain="NetworkID")
+    etree.SubElement(from_cred, "Identity").text = from_identity
+    
+    # To - The buyer (SAP Ariba) - mirrors From
+    to_elem = etree.SubElement(header, "To")
+    to_cred = etree.SubElement(to_elem, "Credential", domain="NetworkID")
+    etree.SubElement(to_cred, "Identity").text = from_identity
+    
+    # Sender - The supplier (your system)
+    sender_elem = etree.SubElement(header, "Sender")
+    sender_cred = etree.SubElement(sender_elem, "Credential", domain="NetworkID")
+    etree.SubElement(sender_cred, "Identity").text = settings.PUNCHOUT_SUPPLIER_DUNS or "kalikaindia.com"
+    if settings.PUNCHOUT_SHARED_SECRET:
+        etree.SubElement(sender_cred, "SharedSecret").text = settings.PUNCHOUT_SHARED_SECRET
+    etree.SubElement(sender_elem, "UserAgent").text = "Kalika India PunchOut 1.0"
+    
+    # Message container
     message = etree.SubElement(root, "Message")
     poom = etree.SubElement(message, "PunchOutOrderMessage")
     etree.SubElement(poom, "BuyerCookie").text = buyer_cookie
@@ -185,8 +282,17 @@ def _prepare_and_return_cart_to_ariba(request):
         etree.SubElement(item_detail, "UnitOfMeasure").text = item.product.unit_of_measure or 'EA'
         if item.product.unspsc:
             etree.SubElement(item_detail, "Classification", domain="UNSPSC").text = item.product.unspsc
-            
-    final_cxml_payload = etree.tostring(root, pretty_print=True, xml_declaration=True, encoding='UTF-8').decode('utf-8')
+    
+    # Generate XML with DOCTYPE
+    doctype = '<!DOCTYPE cXML SYSTEM "http://xml.cXML.org/schemas/cXML/1.2.014/cXML.dtd">'
+    final_cxml_payload = etree.tostring(
+        root,
+        pretty_print=True,
+        xml_declaration=True,
+        encoding='UTF-8',
+        doctype=doctype
+    ).decode('utf-8')
+    
     logger.info(f"Generated PunchOutOrderMessage for user {request.user}:\n{final_cxml_payload}")
 
     try:

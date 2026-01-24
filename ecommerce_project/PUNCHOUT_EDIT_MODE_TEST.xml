@@ -1,0 +1,74 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE cXML SYSTEM "http://xml.cxml.org/schemas/cXML/1.2.014/cXML.dtd">
+<cXML version="1.2.014" payloadID="edit-test-12345@ariba.com" timestamp="2026-01-23T12:00:00-08:00">
+    <Header>
+        <From>
+            <Credential domain="NetworkID">
+                <Identity>AN01000000123</Identity>
+            </Credential>
+        </From>
+        <To>
+            <Credential domain="DUNS">
+                <Identity>987654321</Identity>
+            </Credential>
+        </To>
+        <Sender>
+            <Credential domain="NetworkID">
+                <Identity>AN01000000123</Identity>
+                <SharedSecret>response_secret</SharedSecret>
+            </Credential>
+            <UserAgent>Ariba Procurement Solution</UserAgent>
+        </Sender>
+    </Header>
+    <Request>
+        <PunchOutSetupRequest operation="edit">
+            <BuyerCookie>EDIT_MODE_TEST_COOKIE_789</BuyerCookie>
+            <Extrinsic name="User">john.doe@company.com</Extrinsic>
+            <Extrinsic name="UniqueName">John Doe</Extrinsic>
+            
+            <!-- Pre-populated cart items from SAP Ariba -->
+            <ItemOut quantity="5">
+                <ItemID>
+                    <SupplierPartID>N69PC-001-0026</SupplierPartID>
+                </ItemID>
+                <ItemDetail>
+                    <UnitPrice>
+                        <Money currency="INR">25.00</Money>
+                    </UnitPrice>
+                    <Description>COTTON GLOVES FOR EPOXY (PAIR)</Description>
+                </ItemDetail>
+            </ItemOut>
+            
+            <ItemOut quantity="10">
+                <ItemID>
+                    <SupplierPartID>N69PC-001-0007</SupplierPartID>
+                </ItemID>
+                <ItemDetail>
+                    <UnitPrice>
+                        <Money currency="INR">1.15</Money>
+                    </UnitPrice>
+                    <Description>POLYTHENE GLOVES</Description>
+                </ItemDetail>
+            </ItemOut>
+            
+            <ItemOut quantity="3">
+                <ItemID>
+                    <SupplierPartID>N69EG-019-0014</SupplierPartID>
+                </ItemID>
+                <ItemDetail>
+                    <UnitPrice>
+                        <Money currency="INR">15.00</Money>
+                    </UnitPrice>
+                    <Description>GELCOAT HAND SLEEVE</Description>
+                </ItemDetail>
+            </ItemOut>
+            
+            <BrowserFormPost>
+                <URL>https://webhook.site/c1b9e33a-08e9-40b4-a488-d1552ddfb9cb</URL>
+            </BrowserFormPost>
+            <SupplierSetup>
+                <URL>http://127.0.0.1:8000/catalog/</URL>
+            </SupplierSetup>
+        </PunchOutSetupRequest>
+    </Request>
+</cXML>
