@@ -82,32 +82,46 @@ def update_cart_quantity(request):
             data = json.loads(request.body)
             item_id = data.get('item_id')
             quantity = data.get('quantity')
-
-            cart_item = CartItem.objects.get(id=item_id, session_key=request.session.session_key)
+            
+            logger.info(f"Updating cart: item_id={item_id}, quantity={quantity}")
+            
+            # Ensure session exists
+            if not request.session.session_key:
+                request.session.create()
+            
+            session_key = request.session.session_key
+            logger.info(f"Session key: {session_key}")
+            
+            cart_item = CartItem.objects.get(id=item_id, session_key=session_key)
+            logger.info(f"Found cart item: {cart_item.id}, current quantity: {cart_item.quantity}")
 
             if quantity > 0:
                 cart_item.quantity = quantity
                 cart_item.save()
                 logger.info(f"Updated quantity for CartItem {item_id} to {quantity}.")
-                updated_cart_items = CartItem.objects.filter(session_key=request.session.session_key)
+                updated_cart_items = CartItem.objects.filter(session_key=session_key)
                 new_total = sum(item.quantity * item.product.price for item in updated_cart_items)
-                return JsonResponse({
+                response_data = {
                     'success': True,
                     'new_quantity': quantity,
-                    'new_subtotal': cart_item.quantity * cart_item.product.price,
-                    'new_total': new_total
-                })
+                    'new_subtotal': float(cart_item.quantity * cart_item.product.price),
+                    'new_total': float(new_total)
+                }
+                logger.info(f"Returning success response: {response_data}")
+                return JsonResponse(response_data, status=200)
             else:
                 cart_item.delete()
                 logger.info(f"Removed CartItem {item_id} as quantity was 0 or less.")
-                updated_cart_items = CartItem.objects.filter(session_key=request.session.session_key)
+                updated_cart_items = CartItem.objects.filter(session_key=session_key)
                 new_total = sum(item.quantity * item.product.price for item in updated_cart_items)
-                return JsonResponse({
+                response_data = {
                     'success': True,
                     'removed': True,
                     'item_id': item_id,
-                    'new_total': new_total
-                })
+                    'new_total': float(new_total)
+                }
+                logger.info(f"Returning remove response: {response_data}")
+                return JsonResponse(response_data, status=200)
         except CartItem.DoesNotExist:
             logger.error(f"CartItem id {item_id} not found for session {request.session.session_key}.")
             return JsonResponse({'success': False, 'error': 'Item not found'}, status=404)

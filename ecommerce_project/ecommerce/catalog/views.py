@@ -96,17 +96,29 @@ def get_s3_presigned_url(bucket_name, object_key, expiration=3600):
         return None
 
 def add_s3_urls_to_products(products):
-    print("\n--- Running add_s3_urls_to_products ---")  # Debug print
+    """
+    Optimized version with caching to prevent excessive S3 API calls.
+    Caches S3 URLs for 1 hour per product.
+    """
+    from django.core.cache import caches
+    
+    # Use dedicated product_images cache
+    image_cache = caches['product_images']
     default_image_url = f"{settings.STATIC_URL}images/noimage.jpg"
 
     for product in products:
-        # Print the product ID and the image path stored in the database
-        print(f"Processing product ID: {product.item_id}, DB large_image: '{product.large_image}'")
-
-        # Check if the database contains a valid image path
+        # Generate cache key based on product ID and image path
+        cache_key = f"s3_url_{product.item_id}_{hash(product.large_image or '')}"
+        
+        # Try to get cached URL first
+        cached_url = image_cache.get(cache_key)
+        if cached_url:
+            product.s3_image_url = cached_url
+            continue  # Skip S3 API call, use cached URL
+        
+        # If not cached, generate S3 URL
         if product.large_image and 'noimage.jpg' not in product.large_image:
             image_key = product.large_image.lstrip('/')
-            print(f"  Attempting to get S3 URL for key: '{image_key}'")
             
             # Try to generate the secure S3 URL
             presigned_url = get_s3_presigned_url(
@@ -114,51 +126,85 @@ def add_s3_urls_to_products(products):
                 image_key
             )
 
-            # Check if the S3 URL was created successfully
             if presigned_url:
-                print("  SUCCESS: Got S3 URL.")
                 product.s3_image_url = presigned_url
+                # Cache the successful URL for 1 hour
+                image_cache.set(cache_key, presigned_url, timeout=3600)
             else:
-                print("  FAILED: S3 URL generation failed. Using default image.")
                 product.s3_image_url = default_image_url
+                # Cache default image for shorter time (5 minutes)
+                image_cache.set(cache_key, default_image_url, timeout=300)
         else:
-            # Use the default image if the database path is empty or a placeholder
-            print("  Condition failed (no image or placeholder). Using default image.")
             product.s3_image_url = default_image_url
-        
-        print(f"  Final image URL set to: {product.s3_image_url}\n")
+            # Cache default image
+            image_cache.set(cache_key, default_image_url, timeout=300)
         
     return products
 
 def home(request):
-    # Fetch products for various categories dynamically
-    products_by_category = {}
-    current_minute = int(time.time() // 60)
-    for category in DEFINED_MAIN_CATEGORIES:
-        # MODIFICATION: Changed to a case-insensitive "contains" filter for more reliability.
-        all_products = Product.objects.filter(
-            main_category__icontains=category.split(" ")[0]
-        ).exclude(large_image__icontains='noimage.jpg')
+    """
+    Optimized home view with efficient batch product fetching.
+    Instead of calling add_s3_urls_to_products 15+ times, we call it once.
+    """
+    from django.core.cache import cache
+    
+    # Try to get cached homepage products (cache for 5 minutes)
+    cache_key = 'homepage_products_v2'
+    cached_data = cache.get(cache_key)
+    
+    if cached_data:
+        products_by_category = cached_data
+    else:
+        # Fetch products for various categories dynamically
+        products_by_category = {}
+        current_minute = int(time.time() // 60)
         
-        total = all_products.count()
-        offset = ((current_minute // 9) * 9) % max(1, total)  # avoid division by zero
-        if total <= 10:
-            products = all_products
-        else:
-            end = offset + 10
-            if end <= total:
-                products = all_products[offset:end]
+        # Collect all products in one go to minimize queries
+        all_products_list = []
+        category_products_map = {}
+        
+        for category in DEFINED_MAIN_CATEGORIES:
+            all_products = Product.objects.filter(
+                main_category__icontains=category.split(" ")[0]
+            ).exclude(large_image__icontains='noimage.jpg')
+            
+            total = all_products.count()
+            offset = ((current_minute // 9) * 9) % max(1, total)
+            
+            if total <= 10:
+                products = list(all_products)
             else:
-                products = list(all_products[offset:]) + list(all_products[:end - total])
-        products_by_category[category] = add_s3_urls_to_products(products)
+                end = offset + 10
+                if end <= total:
+                    products = list(all_products[offset:end])
+                else:
+                    products = list(all_products[offset:]) + list(all_products[:end - total])
+            
+            category_products_map[category] = products
+            all_products_list.extend(products)
+        
+        # Call add_s3_urls_to_products ONCE for all products
+        add_s3_urls_to_products(all_products_list)
+        
+        # Now assign processed products back to categories
+        products_by_category = category_products_map
+        
+        # Cache for 5 minutes (300 seconds)
+        cache.set(cache_key, products_by_category, timeout=300)
 
-    # Generate presigned URL for the video
-    video_key = '/kalika-images/kalika-ad1.mp4'  # Replace with your actual S3 video key
-    video_url = get_s3_presigned_url(
-        bucket_name=settings.AWS_S3_BUCKET_NAME,
-        object_key=video_key,
-        expiration=3600  # URL valid for 1 hour
-    )
+    # Generate presigned URL for the video (cache this too)
+    video_cache_key = 'homepage_video_url'
+    video_url = cache.get(video_cache_key)
+    
+    if not video_url:
+        video_key = '/kalika-images/kalika-ad1.mp4'
+        video_url = get_s3_presigned_url(
+            bucket_name=settings.AWS_S3_BUCKET_NAME,
+            object_key=video_key,
+            expiration=3600  # URL valid for 1 hour
+        )
+        # Cache video URL for 50 minutes (slightly less than expiration)
+        cache.set(video_cache_key, video_url, timeout=3000)
 
     context = {
         'products_by_category': products_by_category,

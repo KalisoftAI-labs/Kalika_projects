@@ -312,8 +312,8 @@ def _prepare_and_return_cart_to_ariba(request):
                 quantity=item.quantity,
                 unit_price=item.product.price,
                 subtotal=item.subtotal,
-                unit_of_measure=item.product.unit_of_measure,
-                unspsc=item.product.unspsc
+                unit_of_measure=item.product.unit_of_measure or 'EA',
+                unspsc=item.product.unspsc or ''
             )
         logger.info(f"Successfully logged PunchOutOrder {order_log.id} for user: {logged_in_user}")
     except Exception as e:

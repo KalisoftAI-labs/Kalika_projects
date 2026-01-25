@@ -17,6 +17,8 @@ import pandas as pd
 import uuid # Import uuid for unique filenames
 import json # Import json for handling item_properties
 from datetime import datetime # Import datetime for date formatting
+import boto3 # For S3 upload
+from botocore.exceptions import ClientError
 
 # Pydantic for request body validation
 from pydantic import BaseModel
@@ -33,7 +35,70 @@ class ExportRequest(BaseModel):
 app = FastAPI()
 app.add_middleware(SessionMiddleware, secret_key=os.getenv(SECRET_KEY))
 
-# Define the directory for static files, including uploaded images
+# AWS S3 Configuration
+AWS_ACCESS_KEY_ID = os.getenv('AWS_ACCESS_KEY_ID')
+AWS_SECRET_ACCESS_KEY = os.getenv('AWS_SECRET_ACCESS_KEY')
+AWS_REGION = 'us-east-1'
+AWS_S3_BUCKET_NAME = 'kalika-ecom'
+
+# Initialize S3 client
+s3_client = boto3.client(
+    's3',
+    aws_access_key_id=AWS_ACCESS_KEY_ID,
+    aws_secret_access_key=AWS_SECRET_ACCESS_KEY,
+    region_name=AWS_REGION
+)
+
+def upload_image_to_s3(file_content: bytes, filename: str, content_type: str = None) -> str:
+    """
+    Uploads an image to S3 and returns the S3 key path.
+    Supports: jpg, jpeg, png, gif, webp, bmp, svg, ico
+    Returns the path in format: /kalika-images/filename
+    """
+    try:
+        # Get file extension
+        file_extension = os.path.splitext(filename)[1].lower()
+        
+        # Map file extensions to content types
+        content_type_map = {
+            '.jpg': 'image/jpeg',
+            '.jpeg': 'image/jpeg',
+            '.png': 'image/png',
+            '.gif': 'image/gif',
+            '.webp': 'image/webp',
+            '.bmp': 'image/bmp',
+            '.svg': 'image/svg+xml',
+            '.ico': 'image/x-icon'
+        }
+        
+        # Auto-detect content type if not provided
+        if not content_type:
+            content_type = content_type_map.get(file_extension, 'image/jpeg')
+            logger.info(f"Auto-detected content type: {content_type} for {file_extension}")
+        
+        # Validate file extension
+        if file_extension not in content_type_map:
+            logger.warning(f"Unsupported image format: {file_extension}, treating as JPEG")
+        
+        # Generate unique filename preserving extension
+        unique_filename = f"{uuid.uuid4().hex}{file_extension}"
+        s3_key = f"kalika-images/{unique_filename}"
+        
+        # Upload to S3
+        s3_client.put_object(
+            Bucket=AWS_S3_BUCKET_NAME,
+            Key=s3_key,
+            Body=file_content,
+            ContentType=content_type
+        )
+        
+        logger.info(f"Successfully uploaded {content_type} image to S3: {s3_key}")
+        return f"/{s3_key}"  # Return path with leading slash for consistency
+    except ClientError as e:
+        logger.error(f"Failed to upload image to S3: {e}")
+        return None
+
+# Define the directory for static files, including uploaded images (local fallback)
 STATIC_DIR = "fastapi_app/static"
 UPLOAD_DIR = os.path.join(STATIC_DIR, "images", "products")
 
@@ -750,16 +815,34 @@ async def update_product_post(
     product_image_url = None
     try:
         if imageFile and imageFile.filename:
-            file_extension = os.path.splitext(imageFile.filename)[1]
-            unique_filename = f"{uuid.uuid4().hex}{file_extension}"
-            file_path = os.path.join(UPLOAD_DIR, unique_filename)
-            with open(file_path, "wb") as buffer:
-                buffer.write(await imageFile.read())
-            product_image_url = f"/{STATIC_DIR}/images/products/{unique_filename}"
-            logger.info(f"Uploaded image saved to: {product_image_url}")
+            # Read file content
+            file_content = await imageFile.read()
+            
+            # Upload to S3
+            s3_path = upload_image_to_s3(
+                file_content, 
+                imageFile.filename,
+                imageFile.content_type or 'image/jpeg'
+            )
+            
+            if s3_path:
+                product_image_url = s3_path  # Store S3 path like /kalika-images/abc123.jpg
+                logger.info(f"Image uploaded to S3: {product_image_url}")
+            else:
+                # Fallback: Save locally if S3 upload fails
+                file_extension = os.path.splitext(imageFile.filename)[1]
+                unique_filename = f"{uuid.uuid4().hex}{file_extension}"
+                file_path = os.path.join(UPLOAD_DIR, unique_filename)
+                
+                with open(file_path, "wb") as buffer:
+                    buffer.write(file_content)
+                
+                product_image_url = f"/{STATIC_DIR}/images/products/{unique_filename}"
+                logger.warning(f"S3 upload failed, saved locally: {product_image_url}")
+                
         elif imageUrl:
             product_image_url = imageUrl
-            logger.info(f"Using image URL: {product_image_url}")
+            logger.info(f"Using provided image URL: {product_image_url}")
         else:
             # If neither new file nor URL is provided, try to retain existing image
             existing_product = get_product_by_identifier(item_id=itemId)
@@ -1149,20 +1232,34 @@ async def add_products_post(
     try:
         # Determine the image URL to save
         if imageFile and imageFile.filename:
-            # Generate a unique filename
-            file_extension = os.path.splitext(imageFile.filename)[1]
-            unique_filename = f"{uuid.uuid4().hex}{file_extension}"
-            file_path = os.path.join(UPLOAD_DIR, unique_filename)
+            # Read file content
+            file_content = await imageFile.read()
             
-            # Save the uploaded file
-            with open(file_path, "wb") as buffer:
-                buffer.write(await imageFile.read())
+            # Upload to S3
+            s3_path = upload_image_to_s3(
+                file_content, 
+                imageFile.filename,
+                imageFile.content_type or 'image/jpeg'
+            )
             
-            product_image_url = f"/{STATIC_DIR}/images/products/{unique_filename}"
-            logger.info(f"Uploaded image saved to: {product_image_url}")
+            if s3_path:
+                product_image_url = s3_path  # Store S3 path like /kalika-images/abc123.jpg
+                logger.info(f"Image uploaded to S3: {product_image_url}")
+            else:
+                # Fallback: Save locally if S3 upload fails
+                file_extension = os.path.splitext(imageFile.filename)[1]
+                unique_filename = f"{uuid.uuid4().hex}{file_extension}"
+                file_path = os.path.join(UPLOAD_DIR, unique_filename)
+                
+                with open(file_path, "wb") as buffer:
+                    buffer.write(file_content)
+                
+                product_image_url = f"/{STATIC_DIR}/images/products/{unique_filename}"
+                logger.warning(f"S3 upload failed, saved locally: {product_image_url}")
+                
         elif imageUrl:
             product_image_url = imageUrl
-            logger.info(f"Using image URL: {product_image_url}")
+            logger.info(f"Using provided image URL: {product_image_url}")
         else:
             product_image_url = "/static/images/noimage.jpg" # Default image if neither is provided
             logger.info("No image provided, using default placeholder.")

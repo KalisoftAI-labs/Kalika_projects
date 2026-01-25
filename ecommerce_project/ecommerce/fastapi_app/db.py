@@ -4,15 +4,19 @@ from tabulate import tabulate
 from datetime import datetime
 import logging
 from passlib.context import CryptContext
+import os
 
 logger = logging.getLogger(__name__)
 pwd_context = CryptContext(schemes=["pbkdf2_sha256"], deprecated="auto")
 
-# Database connection parameters
-db_host = 'localhost'
-db_name = 'ecom_prod_catalog'
-db_user = 'vikas'
-db_password = 'kalika1667'
+# Database connection parameters from environment variables
+db_host = os.getenv('DB_HOST', 'localhost')
+db_name = os.getenv('DB_NAME')
+db_user = os.getenv('DB_USER')
+db_password = os.getenv('DB_PASSWORD')
+
+if not all([db_name, db_user, db_password]):
+    raise ValueError("Database credentials (DB_NAME, DB_USER, DB_PASSWORD) must be set in environment variables")
 
 def get_db_connection():
     try:
@@ -68,7 +72,7 @@ def view_tables_and_data():
             print(f"\nNo data found in table 'products'.")
 
         # Fetch and display data from orders
-        cursor.execute("SELECT order_id, customer_id, product_id, quantity, price, status FROM orders LIMIT 5")
+        cursor.execute("SELECT order_id, user_id, order_date, status, total_amount, payment_status FROM orders LIMIT 5")
         rows = cursor.fetchall()
         colnames = [desc[0] for desc in cursor.description]
         if rows:
@@ -147,7 +151,8 @@ def create_accounts_customuser_table():
             is_superuser BOOLEAN DEFAULT FALSE,
             date_joined TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
             last_login TIMESTAMP WITH TIME ZONE,
-            role VARCHAR(50) DEFAULT 'User'
+            role VARCHAR(50) DEFAULT 'User',
+            buyer_identifier VARCHAR(255) UNIQUE
         );
         '''
         cursor.execute(create_table_query)
@@ -155,6 +160,36 @@ def create_accounts_customuser_table():
         logger.info("Table 'accounts_customuser' created or updated successfully")
     except Exception as e:
         logger.error(f"Error creating table 'accounts_customuser': {e}")
+    finally:
+        if cursor:
+            cursor.close()
+        if connection:
+            connection.close()
+
+def create_users_table():
+    """Creates the 'users' table to match dbtest2.py schema."""
+    connection = None
+    cursor = None
+    try:
+        connection = get_db_connection()
+        if not connection:
+            return
+        cursor = connection.cursor()
+        create_table_query = '''
+        CREATE TABLE IF NOT EXISTS users (
+            user_id SERIAL PRIMARY KEY,
+            username VARCHAR(100) UNIQUE NOT NULL,
+            email VARCHAR(255) UNIQUE NOT NULL,
+            password_hash VARCHAR(255) NOT NULL,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        );
+        '''
+        cursor.execute(create_table_query)
+        connection.commit()
+        logger.info("Table 'users' created or updated successfully")
+    except Exception as e:
+        logger.error(f"Error creating table 'users': {e}")
     finally:
         if cursor:
             cursor.close()
@@ -266,6 +301,7 @@ def insert_sample_data():
             connection.close()
 
 def create_admin_user(username, plain_password, email="admin@example.com", role="Admin", is_active=True):
+    """Creates admin user in both users and accounts_customuser tables"""
     connection = None
     cursor = None
     try:
@@ -274,18 +310,29 @@ def create_admin_user(username, plain_password, email="admin@example.com", role=
             return
         cursor = connection.cursor()
 
+        # Insert into users table (for orders FK)
+        cursor.execute("SELECT user_id FROM users WHERE username = %s", (username,))
+        if not cursor.fetchone():
+            hashed_password = pwd_context.hash(plain_password)
+            cursor.execute(
+                "INSERT INTO users (username, email, password_hash) VALUES (%s, %s, %s);",
+                (username, email, hashed_password)
+            )
+            logger.info(f"User '{username}' created in users table.")
+
+        # Insert into accounts_customuser table (for Django compatibility)
         cursor.execute("SELECT id FROM accounts_customuser WHERE username = %s", (username,))
         if cursor.fetchone():
-            logger.info(f"User '{username}' already exists. Skipping creation.")
-            return
-
-        hashed_password = pwd_context.hash(plain_password)
-        cursor.execute(
-            "INSERT INTO accounts_customuser (username, email, password, is_active, date_joined, role) VALUES (%s, %s, %s, %s, %s, %s);",
-            (username, email, hashed_password, is_active, datetime.now(), role)
-        )
+            logger.info(f"User '{username}' already exists in accounts_customuser. Skipping creation.")
+        else:
+            hashed_password = pwd_context.hash(plain_password)
+            cursor.execute(
+                "INSERT INTO accounts_customuser (username, email, password, is_active, date_joined, role) VALUES (%s, %s, %s, %s, %s, %s);",
+                (username, email, hashed_password, is_active, datetime.now(), role)
+            )
+            logger.info(f"Admin user '{username}' created in accounts_customuser.")
+        
         connection.commit()
-        logger.info(f"Admin user '{username}' created/updated successfully with hashed password.")
     except Exception as e:
         logger.error(f"Error creating admin user: {e}")
     finally:
@@ -295,6 +342,7 @@ def create_admin_user(username, plain_password, email="admin@example.com", role=
             connection.close()
 
 def insert_sample_user_data(username, plain_password, email, role="User", is_active=True):
+    """Creates sample user in both users and accounts_customuser tables"""
     connection = None
     cursor = None
     try:
@@ -303,18 +351,29 @@ def insert_sample_user_data(username, plain_password, email, role="User", is_act
             return
         cursor = connection.cursor()
 
+        # Insert into users table (for orders FK)
+        cursor.execute("SELECT user_id FROM users WHERE username = %s", (username,))
+        if not cursor.fetchone():
+            hashed_password = pwd_context.hash(plain_password)
+            cursor.execute(
+                "INSERT INTO users (username, email, password_hash) VALUES (%s, %s, %s);",
+                (username, email, hashed_password)
+            )
+            logger.info(f"Sample user '{username}' created in users table.")
+
+        # Insert into accounts_customuser table (for Django compatibility)
         cursor.execute("SELECT id FROM accounts_customuser WHERE username = %s", (username,))
         if cursor.fetchone():
-            logger.info(f"User '{username}' already exists. Skipping insertion.")
-            return
-
-        hashed_password = pwd_context.hash(plain_password)
-        cursor.execute(
-            "INSERT INTO accounts_customuser (username, email, password, is_active, date_joined, role) VALUES (%s, %s, %s, %s, %s, %s);",
-            (username, email, hashed_password, is_active, datetime.now(), role)
-        )
+            logger.info(f"User '{username}' already exists in accounts_customuser. Skipping insertion.")
+        else:
+            hashed_password = pwd_context.hash(plain_password)
+            cursor.execute(
+                "INSERT INTO accounts_customuser (username, email, password, is_active, date_joined, role) VALUES (%s, %s, %s, %s, %s, %s);",
+                (username, email, hashed_password, is_active, datetime.now(), role)
+            )
+            logger.info(f"Sample user '{username}' created in accounts_customuser.")
+        
         connection.commit()
-        logger.info(f"Sample user '{username}' created successfully.")
     except Exception as e:
         logger.error(f"Error inserting sample user data: {e}")
     finally:
@@ -344,7 +403,7 @@ def insert_sample_products():
                 ('Home & Kitchen', 'Cookware', 'COOKWARE001', 'Non-Stick Pan Set', 'Set of 3 non-stick pans for everyday cooking.', 75.00, 'https://placehold.co/100x100?text=Pan')
             ]
             insert_query = """
-            INSERT INTO products (main_category, sub_categories, item_code, product_title, product_description, price, image_url)
+            INSERT INTO products (main_category, sub_categories, item_code, product_title, product_description, price, large_image)
             VALUES (%s, %s, %s, %s, %s, %s, %s)
             """
             cursor.executemany(insert_query, products_to_insert)
@@ -377,19 +436,18 @@ def create_orders_table():
         create_table_query = '''
         CREATE TABLE orders (
             order_id SERIAL PRIMARY KEY,
-            customer_id INT NOT NULL,
-            product_id INT NOT NULL,
-            quantity INT NOT NULL CHECK (quantity > 0),
-            price DECIMAL(10, 2) NOT NULL, -- Ensure price column exists
+            user_id INT NOT NULL,
             order_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             status VARCHAR(50) DEFAULT 'Pending',
+            total_amount DECIMAL(10, 2) NOT NULL,
             shipping_address TEXT,
             payment_method VARCHAR(50),
             payment_status VARCHAR(50) DEFAULT 'Unpaid',
             shipping_date TIMESTAMP,
             delivery_date TIMESTAMP,
-            CONSTRAINT fk_customer FOREIGN KEY (customer_id) REFERENCES accounts_customuser(id),
-            CONSTRAINT fk_product FOREIGN KEY (product_id) REFERENCES products(item_id)
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            CONSTRAINT fk_user FOREIGN KEY (user_id) REFERENCES users(user_id) ON DELETE CASCADE
         );
         '''
         cursor.execute(create_table_query)
@@ -451,8 +509,8 @@ def get_total_sales():
         if not connection:
             return 0.0
         cursor = connection.cursor()
-        # Sum of (price * quantity) for completed orders
-        cursor.execute("SELECT COALESCE(SUM(o.price * o.quantity), 0) FROM orders o WHERE o.status = 'Completed'")
+        # Sum of total_amount for completed orders
+        cursor.execute("SELECT COALESCE(SUM(o.total_amount), 0) FROM orders o WHERE o.status = 'Completed'")
         total_sales = cursor.fetchone()[0]
         return float(total_sales)
     except Exception as e:
@@ -497,14 +555,14 @@ def get_recent_orders(limit=5):
         cursor.execute("""
             SELECT
                 o.order_id,
-                au.username AS customer_name,
+                u.username AS customer_name,
                 o.status,
                 o.order_date,
-                (o.price * o.quantity) AS total_amount
+                o.total_amount
             FROM
                 orders o
             JOIN
-                accounts_customuser au ON o.customer_id = au.id
+                users u ON o.user_id = u.user_id
             ORDER BY
                 o.order_date DESC
             LIMIT %s;
@@ -569,6 +627,7 @@ if __name__ == '__main__':
             cursor.execute("DROP TABLE IF EXISTS orders CASCADE;")
             cursor.execute("DROP TABLE IF EXISTS products CASCADE;")
             cursor.execute("DROP TABLE IF EXISTS punchout_responses CASCADE;")
+            cursor.execute("DROP TABLE IF EXISTS users CASCADE;")
             cursor.execute("DROP TABLE IF EXISTS accounts_customuser CASCADE;")
             conn.commit()
             logger.info("Dropped all existing tables for a clean slate.")
@@ -579,6 +638,7 @@ if __name__ == '__main__':
             if conn: conn.close()
 
     # Recreate all tables
+    create_users_table()  # Create users table first (required by orders FK)
     create_accounts_customuser_table()
     create_products_table()
     create_punchout_table()
@@ -597,14 +657,13 @@ if __name__ == '__main__':
             cursor.execute("SELECT COUNT(*) FROM orders")
             if cursor.fetchone()[0] == 0:
                 logger.info("Inserting sample orders...")
-                # Ensure customer_id and product_id exist from sample data
-                # Assuming admin (id 1) and testuser (id 2) exist
-                # Assuming Smartphone X (id 1) and UltraBook Pro (id 2) exist
-                cursor.execute("INSERT INTO orders (customer_id, product_id, quantity, price, status, order_date) VALUES (1, 1, 2, 999.99, 'Completed', CURRENT_TIMESTAMP - INTERVAL '5 days');")
-                cursor.execute("INSERT INTO orders (customer_id, product_id, quantity, price, status, order_date) VALUES (1, 2, 1, 1499.99, 'Pending', CURRENT_TIMESTAMP - INTERVAL '2 days');")
-                cursor.execute("INSERT INTO orders (customer_id, product_id, quantity, price, status, order_date) VALUES (2, 3, 5, 19.99, 'Completed', CURRENT_TIMESTAMP - INTERVAL '10 days');")
-                cursor.execute("INSERT INTO orders (customer_id, product_id, quantity, price, status, order_date) VALUES (2, 4, 1, 49.99, 'Pending', CURRENT_TIMESTAMP - INTERVAL '1 day');")
-                cursor.execute("INSERT INTO orders (customer_id, product_id, quantity, price, status, order_date) VALUES (1, 5, 1, 15.50, 'Completed', CURRENT_TIMESTAMP - INTERVAL '3 days');")
+                # Ensure user_id exists from sample data
+                # Assuming admin (user_id 1) and testuser (user_id 2) exist
+                cursor.execute("INSERT INTO orders (user_id, total_amount, status, order_date) VALUES (1, 1999.98, 'Completed', CURRENT_TIMESTAMP - INTERVAL '5 days');")
+                cursor.execute("INSERT INTO orders (user_id, total_amount, status, order_date) VALUES (1, 1499.99, 'Pending', CURRENT_TIMESTAMP - INTERVAL '2 days');")
+                cursor.execute("INSERT INTO orders (user_id, total_amount, status, order_date) VALUES (2, 99.95, 'Completed', CURRENT_TIMESTAMP - INTERVAL '10 days');")
+                cursor.execute("INSERT INTO orders (user_id, total_amount, status, order_date) VALUES (2, 49.99, 'Pending', CURRENT_TIMESTAMP - INTERVAL '1 day');")
+                cursor.execute("INSERT INTO orders (user_id, total_amount, status, order_date) VALUES (1, 15.50, 'Completed', CURRENT_TIMESTAMP - INTERVAL '3 days');")
                 conn.commit()
                 logger.info("Sample orders inserted.")
             else:

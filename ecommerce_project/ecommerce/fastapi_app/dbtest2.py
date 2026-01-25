@@ -5,12 +5,15 @@ import os # Import os for path manipulation
 from tabulate import tabulate # For printing table schemas
 
 # Database connection parameters
-# It's highly recommended to use environment variables for sensitive data like passwords
+# MUST be set in environment variables
 db_host = os.getenv("DB_HOST", "localhost")
-db_name = os.getenv("DB_NAME", "ecom_prod_catalog")
-db_user = os.getenv("DB_USER", "vikas")
-db_password = os.getenv("DB_PASSWORD", "kalika1667")
+db_name = os.getenv("DB_NAME")
+db_user = os.getenv("DB_USER")
+db_password = os.getenv("DB_PASSWORD")
 db_port = os.getenv("DB_PORT", "5432")
+
+if not all([db_name, db_user, db_password]):
+    raise ValueError("Database credentials (DB_NAME, DB_USER, DB_PASSWORD) must be set in environment variables")
 
 def get_db_connection():
     """Establishes a connection to the PostgreSQL database."""
@@ -57,6 +60,46 @@ def create_users_table():
 
     except Exception as error:
         print(f"Error creating/ensuring 'users' table: {error}")
+    finally:
+        if cursor:
+            cursor.close()
+        if connection:
+            connection.close()
+
+def create_accounts_customuser_table():
+    """
+    Creates the 'accounts_customuser' table for Django authentication.
+    This matches the Django CustomUser model structure.
+    """
+    connection = None
+    cursor = None
+    try:
+        connection = get_db_connection()
+        if not connection:
+            return
+        cursor = connection.cursor()
+        
+        create_table_query = '''
+        CREATE TABLE IF NOT EXISTS accounts_customuser (
+            id SERIAL PRIMARY KEY,
+            username VARCHAR(150) UNIQUE NOT NULL,
+            email VARCHAR(254) UNIQUE NOT NULL,
+            password VARCHAR(128) NOT NULL,
+            is_active BOOLEAN DEFAULT TRUE,
+            is_staff BOOLEAN DEFAULT FALSE,
+            is_superuser BOOLEAN DEFAULT FALSE,
+            date_joined TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+            last_login TIMESTAMP WITH TIME ZONE,
+            role VARCHAR(50) DEFAULT 'User',
+            buyer_identifier VARCHAR(255) UNIQUE
+        );
+        '''
+        cursor.execute(create_table_query)
+        connection.commit()
+        print("Table 'accounts_customuser' created successfully.")
+
+    except Exception as error:
+        print(f"Error creating 'accounts_customuser' table: {error}")
     finally:
         if cursor:
             cursor.close()
@@ -320,6 +363,7 @@ if __name__ == "__main__":
 
     print("Attempting to create/ensure database tables...")
     create_users_table()
+    create_accounts_customuser_table()  # Add Django auth table
     
     # This function now creates the table with the new, separate columns
     create_products_table()

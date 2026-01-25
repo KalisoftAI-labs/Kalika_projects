@@ -17,6 +17,10 @@ class CustomUser(AbstractUser):
         unique=True, 
         db_index=True  # Performance ke liye index add kiya gaya hai
     )
+    
+    # Remove first_name and last_name from AbstractUser since they don't exist in DB
+    first_name = None
+    last_name = None
 
     def __str__(self):
         return self.username

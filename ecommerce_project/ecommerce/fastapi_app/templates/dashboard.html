@@ -101,29 +101,36 @@
             </tr>
         </thead>
         <tbody>
-            {% for order in recent_orders %} {# Loop through dynamic recent_orders #}
-            <tr>
-                <td class="py-3 px-4">#{{ order.order_id }}</td>
-                <td class="py-3 px-4">{{ order.customer_name }}</td>
-                <td class="py-3 px-4">
-                    <span class="px-3 py-1 rounded-full text-xs font-semibold
-                        {% if order.status == 'Completed' %}bg-accent-emerald/20 text-accent-emerald
-                        {% elif order.status == 'Pending' %}bg-orange-500/20 text-orange-500
-                        {% else %}bg-red-500/20 text-red-500{% endif %}">
-                        {{ order.status|title }}
-                    </span>
-                </td>
-                <td class="py-3 px-4">{{ order.order_date.strftime('%Y-%m-%d') }}</td>
-                <td class="py-3 px-4">${{ "%.2f"|format(order.total_amount) }}</td>
-                <td class="py-3 px-4">
-                    <button class="bg-accent-indigo text-white px-3 py-1 rounded-md text-sm hover:bg-accent-indigo/80 transition-colors duration-200">View</button>
-                </td>
-            </tr>
+            {% if recent_orders %}
+                {% for order in recent_orders %} {# Loop through dynamic recent_orders #}
+                <tr>
+                    <td class="py-3 px-4">#{{ order.order_id }}</td>
+                    <td class="py-3 px-4">{{ order.customer_name }}</td>
+                    <td class="py-3 px-4">
+                        <span class="px-3 py-1 rounded-full text-xs font-semibold
+                            {% if order.status == 'Completed' %}bg-accent-emerald/20 text-accent-emerald
+                            {% elif order.status == 'Pending' %}bg-orange-500/20 text-orange-500
+                            {% else %}bg-red-500/20 text-red-500{% endif %}">
+                            {{ order.status|title }}
+                        </span>
+                    </td>
+                    <td class="py-3 px-4">{{ order.order_date.strftime('%Y-%m-%d') }}</td>
+                    <td class="py-3 px-4">${{ "%.2f"|format(order.total_amount) }}</td>
+                    <td class="py-3 px-4">
+                        <button class="bg-accent-indigo text-white px-3 py-1 rounded-md text-sm hover:bg-accent-indigo/80 transition-colors duration-200">View</button>
+                    </td>
+                </tr>
+                {% endfor %}
             {% else %}
-            <tr>
-                <td colspan="6" class="py-3 px-4 text-center text-text-secondary">No recent orders found.</td>
-            </tr>
-            {% endfor %}
+                <tr>
+                    <td class="py-3 px-4 text-center text-text-secondary">-</td>
+                    <td class="py-3 px-4 text-center text-text-secondary">-</td>
+                    <td class="py-3 px-4 text-center text-text-secondary">-</td>
+                    <td class="py-3 px-4 text-center text-text-secondary">-</td>
+                    <td class="py-3 px-4 text-center text-text-secondary">-</td>
+                    <td class="py-3 px-4 text-center text-text-secondary">-</td>
+                </tr>
+            {% endif %}
         </tbody>
     </table>
     <div class="flex justify-end items-center mt-4 space-x-2 text-text-secondary">
@@ -298,7 +305,7 @@
                         'rgb(239, 68, 68)', // red-500
                         'rgb(153, 102, 255)' // purple
                     ],
-                    hoverOffset:4
+                    hoverOffset: 4
                 }]
             },
             options: {
