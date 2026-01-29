@@ -53,6 +53,8 @@ MIDDLEWARE = [
     'ecommerce.middleware.security_middleware.SecurityMiddleware',  # Custom IP blocking
     'ecommerce.middleware.security_middleware.RateLimitMiddleware',  # Rate limiting
     'django.contrib.sessions.middleware.SessionMiddleware',
+    'ecommerce.middleware.security_middleware.PunchoutSessionMiddleware',  # PunchOut session handling (MUST be AFTER SessionMiddleware)
+    'ecommerce.middleware.security_middleware.PunchoutCSPMiddleware',  # PunchOut iframe support
     'django.middleware.common.CommonMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',
     'django.contrib.auth.middleware.AuthenticationMiddleware',
@@ -172,10 +174,25 @@ CSRF_COOKIE_SECURE = True     # CSRF cookies only over HTTPS
 #SESSION_COOKIE_SECURE = False  # Set to True in production with HTTPS
 #CSRF_COOKIE_SECURE = False     # Set to True in production with HTTPS
 
+# CSRF Settings for PunchOut Integration
+CSRF_TRUSTED_ORIGINS = [
+    'https://kalikaindia.com',
+    'https://www.kalikaindia.com',
+    'https://service.ariba.com',
+    'https://*.ariba.com',
+    'https://*.sap.com',
+    'https://*.aribanetwork.com',
+]
+
+# Allow cookies to work in iframes (required for PunchOut)
+CSRF_COOKIE_SAMESITE = 'None'  # Required for cross-site iframe embedding
+SESSION_COOKIE_SAMESITE = 'None'  # Required for cross-site iframe embedding
+CSRF_COOKIE_HTTPONLY = False  # Allow JavaScript access to CSRF token in iframe context
+
 # Additional security headers
 SECURE_BROWSER_XSS_FILTER = True
 SECURE_CONTENT_TYPE_NOSNIFF = True
-X_FRAME_OPTIONS = 'DENY'
+X_FRAME_OPTIONS = 'SAMEORIGIN'
 SECURE_HSTS_SECONDS = 31536000  # 1 year
 SECURE_HSTS_INCLUDE_SUBDOMAINS = True
 SECURE_HSTS_PRELOAD = True

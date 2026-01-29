@@ -107,3 +107,71 @@ class RateLimitMiddleware:
         
         response = self.get_response(request)
         return response
+
+
+class PunchoutCSPMiddleware:
+    """
+    Middleware to allow SAP Ariba and other PunchOut systems to frame the catalog.
+    This sets Content-Security-Policy frame-ancestors to permit iframing.
+    """
+    
+    def __init__(self, get_response):
+        self.get_response = get_response
+    
+    def __call__(self, request):
+        response = self.get_response(request)
+        
+        # Allow framing by SAP Ariba and self (for PunchOut integration)
+        # This is required for the catalog to work within Ariba's procurement interface
+        response["Content-Security-Policy"] = (
+            "frame-ancestors 'self' "
+            "https://*.ariba.com "
+            "https://*.sap.com "
+            "https://service.ariba.com "
+            "https://*.aribanetwork.com"
+        )
+        
+        return response
+
+
+class PunchoutSessionMiddleware:
+    """
+    Middleware to handle PunchOut sessions in iframe contexts where cookies don't work.
+    When a punchout_session parameter is present, we use it as the session key.
+    This middleware MUST be placed AFTER SessionMiddleware in settings.py.
+    """
+    
+    def __init__(self, get_response):
+        self.get_response = get_response
+    
+    def __call__(self, request):
+        # Check for punchout_session parameter (can be in GET or POST)
+        punchout_session = request.GET.get('punchout_session') or request.POST.get('punchout_session')
+        
+        if punchout_session and hasattr(request, 'session'):
+            # Only override if different from current session
+            if request.session.session_key != punchout_session:
+                try:
+                    from django.contrib.sessions.backends.db import SessionStore
+                    
+                    # Create a new session store with the punchout_session key
+                    new_session = SessionStore(session_key=punchout_session)
+                    
+                    # Check if this session exists in database
+                    if not new_session.exists(punchout_session):
+                        # Session doesn't exist yet, create it
+                        new_session.create()
+                    else:
+                        # Load existing session data
+                        new_session.load()
+                    
+                    # Replace request.session with the new session object
+                    request.session = new_session
+                    logger.debug(f"PunchOut session activated: {punchout_session}")
+                    
+                except Exception as e:
+                    # If session override fails, log and continue with default session
+                    logger.warning(f"Failed to activate PunchOut session {punchout_session}: {e}")
+        
+        response = self.get_response(request)
+        return response

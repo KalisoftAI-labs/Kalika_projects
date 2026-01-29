@@ -146,7 +146,7 @@
                 </div>
 
                 <!-- Cart -->
-                <a href="{% url 'cart:view_cart' %}" class="relative flex items-center text-gray-600 hover:text-teal-600 transition duration-300">
+                <a href="{% url 'cart:view_cart' %}{% if punchout_session %}?punchout_session={{ punchout_session }}{% endif %}" class="relative flex items-center text-gray-600 hover:text-teal-600 transition duration-300">
                     <i data-feather="shopping-cart" class="w-6 h-6"></i>
                     <span id="cart-item-count" class="absolute -top-1 -right-2 inline-flex items-center justify-center h-5 w-5 text-xs font-bold text-white bg-teal-500 rounded-full">
                         {% if cart_item_count > 0 %}{{ cart_item_count }}{% endif %}

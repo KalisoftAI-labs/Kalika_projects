@@ -11,6 +11,7 @@ from cart.models import CartItem
 from urllib.parse import unquote
 from django.db.models import Q, Count
 from django.conf import settings
+from django.views.decorators.csrf import ensure_csrf_cookie
 
 logger = logging.getLogger(__name__)
 
@@ -141,6 +142,7 @@ def add_s3_urls_to_products(products):
         
     return products
 
+@ensure_csrf_cookie
 def home(request):
     """
     Optimized home view with efficient batch product fetching.
@@ -211,6 +213,7 @@ def home(request):
         'featured_products': products_by_category.get("Hand & Power Tools", [])[:10],
         'categories': build_category_context(),
         'hero_video_url': video_url,
+        'punchout_session': request.GET.get('punchout_session'),  # Pass punchout session to template
     }
     return render(request, 'catalog/home.html', context)
 
@@ -233,7 +236,8 @@ def product_detail(request, item_id):
 
     context = {
         'product': product,
-        'categories': build_category_context()
+        'categories': build_category_context(),
+        'punchout_session': request.GET.get('punchout_session'),
     }
     return render(request, 'catalog/product_detail.html', context)
 
@@ -261,7 +265,8 @@ def products_by_category(request, main_category_name):
         'main_category': main_category_name,
         'products': products_with_urls,
         'subcategories_list': subcategories_list,  # Pass the correctly formatted list
-        'categories': build_category_context()    # For the main header menu
+        'categories': build_category_context(),    # For the main header menu
+        'punchout_session': request.GET.get('punchout_session'),
     }
     return render(request, 'catalog/products_by_category.html', context)
 
@@ -286,7 +291,8 @@ def products_by_subcategory(request, main_category_name, sub_category_name):
         'main_category': main_category_name,
         'sub_category': decoded_sub_category,
         'products': products_with_urls,
-        'categories': build_category_context()
+        'categories': build_category_context(),
+        'punchout_session': request.GET.get('punchout_session'),
     }
     return render(request, 'catalog/products_by_subcategory.html', context)
 
@@ -317,7 +323,8 @@ def all_categories(request):
             categories_data[main_cat] = {'subcategories': subcategories_list}
     context = {
         'categories': categories_data,
-        'categories_menu': build_category_context()
+        'categories_menu': build_category_context(),
+        'punchout_session': request.GET.get('punchout_session'),
     }
     return render(request, 'catalog/all_categories.html', context)
 
@@ -339,6 +346,7 @@ def search_products(request):
     context = {
         'products': products_with_urls,
         'query': query,
-        'categories': build_category_context()
+        'categories': build_category_context(),
+        'punchout_session': request.GET.get('punchout_session'),
     }
     return render(request, 'catalog/search_results.html', context)

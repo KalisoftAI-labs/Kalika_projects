@@ -3,6 +3,25 @@
 from django.db import models
 from accounts.models import CustomUser
 
+
+class PunchOutSession(models.Model):
+    """
+    Stores PunchOut session data since cookies don't work reliably in iframes.
+    This allows us to retrieve return URL and buyer cookie when checking out.
+    """
+    session_key = models.CharField(max_length=40, unique=True, db_index=True)
+    return_url = models.URLField(max_length=500)
+    buyer_cookie = models.TextField()
+    from_identity = models.CharField(max_length=255, default='UNKNOWN')
+    created_at = models.DateTimeField(auto_now_add=True)
+    
+    def __str__(self):
+        return f"PunchOut Session {self.session_key}"
+    
+    class Meta:
+        ordering = ['-created_at']
+
+
 class PunchOutOrder(models.Model):
     """
     Yeh aapka mukhya "Order" table hai.

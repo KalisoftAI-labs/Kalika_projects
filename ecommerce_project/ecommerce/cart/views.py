@@ -9,7 +9,7 @@ import logging
 from catalog.views import get_s3_presigned_url
 from django.conf import settings
 from django.contrib import messages
-from django.views.decorators.csrf import csrf_exempt
+from django.views.decorators.csrf import csrf_exempt, ensure_csrf_cookie
 import xml.etree.ElementTree as ET
 from datetime import datetime
 import requests
@@ -17,6 +17,7 @@ import uuid
 
 logger = logging.getLogger(__name__)
 
+@ensure_csrf_cookie
 def add_to_cart(request, item_id):
     """Adds a product to the cart. Supports AJAX and redirects."""
     product = get_object_or_404(Product, item_id=item_id)
@@ -39,6 +40,11 @@ def add_to_cart(request, item_id):
     if request.headers.get('x-requested-with') == 'XMLHttpRequest':
         return JsonResponse({'success': True, 'message': 'Product added to cart successfully.'})
 
+    # Preserve punchout_session parameter in redirect
+    punchout_session = request.GET.get('punchout_session')
+    if punchout_session:
+        return redirect(f'/cart/?punchout_session={punchout_session}')
+    
     return redirect('cart:view_cart')
 
 # cart/views.py (Corrected)
@@ -57,9 +63,17 @@ def view_cart(request):
         item.product.s3_image_url = get_s3_presigned_url(settings.AWS_S3_BUCKET_NAME, item.product.large_image) if item.product.large_image else None
         logger.debug(f"Cart item {item.id}: s3_image_url = {item.product.s3_image_url}")
     
+    # Check if this is a PunchOut session - either from URL param or session
+    punchout_session_param = request.GET.get('punchout_session')
+    is_punchout = request.session.get('is_punchout', False) or bool(punchout_session_param)
+    
+    logger.info(f"view_cart - session is_punchout: {request.session.get('is_punchout')}, URL param: {punchout_session_param}, final is_punchout: {is_punchout}")
+    
     return render(request, 'cart/view_cart.html', {
         'cart_items': cart_items,
-        'total': total
+        'total': total,
+        'is_punchout': is_punchout,
+        'punchout_session': punchout_session_param or session_key,
     })
 
 def remove_from_cart(request, item_id):

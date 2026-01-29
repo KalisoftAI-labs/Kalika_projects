@@ -13,7 +13,7 @@ import uuid
 from accounts.models import CustomUser
 from cart.models import CartItem
 from catalog.models import Product
-from .models import PunchOutOrder, PunchOutOrderItem
+from .models import PunchOutOrder, PunchOutOrderItem, PunchOutSession
 
 logger = logging.getLogger(__name__)
 
@@ -44,7 +44,10 @@ def _generate_punchout_setup_response(start_page_url):
     Generates a cXML PunchOutSetupResponse with proper DOCTYPE and structure.
     This is sent back to SAP Ariba after receiving PunchOutSetupRequest.
     """
-    timestamp = datetime.utcnow().isoformat() + 'Z'
+    # SAP Ariba requires timezone offset format: 2011-11-21T12:59:09-07:00 (not 'Z')
+    from datetime import timezone, timedelta
+    # Use local timezone offset (or UTC with +00:00 instead of Z)
+    timestamp = datetime.now(timezone.utc).strftime('%Y-%m-%dT%H:%M:%S+00:00')
     payload_id = f"{int(datetime.utcnow().timestamp())}.{uuid.uuid4()}@kalikaindia.com"
     
     # Create root element with proper attributes
@@ -134,55 +137,81 @@ def punchout_setup(request):
             return render(request, 'punchout/punchout_error.html', {'error': 'User management failed.'})
 
         # --- Store PunchOut session data ---
+        # Store in both session (if it works) and database (fallback for iframe issues)
         request.session['is_punchout'] = True
         request.session['punchout_return_url'] = browser_post_url
         request.session['punchout_buyer_cookie'] = buyer_cookie
         request.session['punchout_from_identity'] = from_identity
-        logger.debug(f"PunchOut session created for user: {user.username}, return_url: {browser_post_url}")
         
-        # --- Handle Automated/Edit Cart Flow ---
+        # Ensure session is created before using session_key
+        if not request.session.session_key:
+            request.session.create()
+        
+        session_key = request.session.session_key
+        
+        # Store in database for iframe compatibility
+        PunchOutSession.objects.update_or_create(
+            session_key=session_key,
+            defaults={
+                'return_url': browser_post_url,
+                'buyer_cookie': buyer_cookie,
+                'from_identity': from_identity,
+            }
+        )
+        logger.debug(f"PunchOut session created in DB for session_key: {session_key}, return_url: {browser_post_url}")
+        
+        # --- Handle Edit/Inspect Mode - Pre-populate Cart ---
+        operation = root.find(".//PunchOutSetupRequest").get("operation", "create")
         item_out_elements = root.findall(".//ItemOut")
-        if item_out_elements:
-            logger.info(f"Detected 'edit' or 'inspect' mode. Found {len(item_out_elements)} ItemOut elements. Populating cart...")
+        
+        if operation in ("edit", "inspect") and item_out_elements:
+            logger.info(f"Detected '{operation}' mode. Found {len(item_out_elements)} ItemOut elements. Pre-populating cart...")
             
-            # Ensure session is created before using session_key
-            if not request.session.session_key:
-                request.session.create()
-            
-            session_key = request.session.session_key
             logger.info(f"Using session_key: {session_key}")
             
-            # Clear existing cart items
+            # Clear existing cart items for this session
             CartItem.objects.filter(session_key=session_key).delete()
             
             items_added = 0
+            items_not_found = []
+            
             for item_out in item_out_elements:
                 item_id_node = item_out.find(".//ItemID/SupplierPartID")
-                quantity_node = item_out.get("quantity")
+                quantity_attr = item_out.get("quantity")
                 
-                if item_id_node is not None and quantity_node is not None:
-                    supplier_part_id = item_id_node.text
-                    quantity = int(quantity_node)
+                if item_id_node is not None and quantity_attr is not None:
+                    supplier_part_id = item_id_node.text.strip()
+                    quantity = int(quantity_attr)
                     logger.info(f"Processing ItemOut: {supplier_part_id} x {quantity}")
                     
                     try:
                         product = Product.objects.get(item_code=supplier_part_id)
-                        cart_item = CartItem.objects.create(
+                        cart_item, created = CartItem.objects.update_or_create(
                             session_key=session_key,
                             product=product,
-                            quantity=quantity
+                            defaults={'quantity': quantity}
                         )
                         items_added += 1
                         logger.info(f"✓ Added to cart: {product.product_title} x {quantity}")
                     except Product.DoesNotExist:
+                        items_not_found.append(supplier_part_id)
                         logger.warning(f"✗ Product with SupplierPartID '{supplier_part_id}' not found in database.")
                     except Exception as e:
                         logger.error(f"✗ Error adding product {supplier_part_id} to cart: {e}")
             
-            logger.info(f"Edit mode: Successfully added {items_added}/{len(item_out_elements)} items to cart. Returning to Ariba...")
-            return _prepare_and_return_cart_to_ariba(request)
+            logger.info(f"{operation.capitalize()} mode: Pre-populated cart with {items_added}/{len(item_out_elements)} items.")
+            if items_not_found:
+                logger.warning(f"Items not found in catalog: {', '.join(items_not_found)}")
+            
+            # IMPORTANT: In edit mode, redirect user to catalog so they can modify cart
+            # Do NOT return to Ariba immediately - user needs to browse and click "PunchOut Checkout"
+            session_id = request.session.session_key
+            start_page_url = f"https://kalikaindia.com/cart/?punchout_session={session_id}"
+            response_cxml = _generate_punchout_setup_response(start_page_url)
+            logger.info(f"Redirecting to cart view for {operation} mode")
+            return HttpResponse(response_cxml, content_type='application/xml')
 
-        # --- Generate and return PunchOutSetupResponse ---
+        # --- Generate and return PunchOutSetupResponse for Create mode ---
         session_id = request.session.session_key
         start_page_url = f"https://kalikaindia.com/?punchout_session={session_id}"
         
@@ -200,35 +229,72 @@ def return_cart_to_ariba(request):
     Initiates the process of returning the cart to the procurement system.
     This view is typically linked from a 'Checkout' button for PunchOut users.
     """
-    if not request.session.get('is_punchout'):
-        logger.warning("return_cart_to_ariba accessed without a valid PunchOut session.")
-        return render(request, 'punchout/punchout_error.html', {'error': 'Not a valid PunchOut session.'})
+    # Check for punchout_session parameter (used in iframe contexts where cookies don't work)
+    # Check both POST and GET as the form sends via POST
+    punchout_session_key = request.POST.get('punchout_session') or request.GET.get('punchout_session')
+    
+    # If no parameter, try to get from session
+    if not punchout_session_key:
+        if request.session.get('is_punchout'):
+            punchout_session_key = request.session.session_key
+        else:
+            logger.warning("return_cart_to_ariba accessed without a valid PunchOut session.")
+            return render(request, 'punchout/punchout_error.html', {'error': 'Not a valid PunchOut session.'})
+    
+    logger.info(f"return_cart_to_ariba - Using session_key: {punchout_session_key}")
+        
+    return _prepare_and_return_cart_to_ariba(request, session_key=punchout_session_key)
 
-    return _prepare_and_return_cart_to_ariba(request)
 
-
-def _prepare_and_return_cart_to_ariba(request):
+def _prepare_and_return_cart_to_ariba(request, session_key=None):
     """
     Prepares the cXML PunchOutOrderMessage and renders the auto-submitting form.
     This is a helper function, not a direct view.
+    
+    Args:
+        request: The HTTP request object
+        session_key: Optional session key to use instead of request.session.session_key
+                     (needed for iframe contexts where session cookies don't work)
     """
-    if not request.session.session_key:
-        request.session.create()
+    # Use provided session_key or fall back to request session
+    if not session_key:
+        if not request.session.session_key:
+            request.session.create()
+        session_key = request.session.session_key
+    
+    logger.info(f"_prepare_and_return_cart_to_ariba - Using session_key: {session_key}")
 
-    session_key = request.session.session_key
     cart_items = CartItem.objects.filter(session_key=session_key)
     
     if not cart_items:
         logger.warning("Attempted to return an empty cart to Ariba.")
         return render(request, 'punchout/punchout_error.html', {'error': 'Your shopping cart is empty.'})
-        
-    return_url = request.session.get('punchout_return_url')
-    buyer_cookie = request.session.get('punchout_buyer_cookie')
-    from_identity = request.session.get('punchout_from_identity', 'UNKNOWN')
+    
+    # Try to get PunchOut session data from database first (for iframe compatibility)
+    try:
+        punchout_session = PunchOutSession.objects.get(session_key=session_key)
+        return_url = punchout_session.return_url
+        buyer_cookie = punchout_session.buyer_cookie
+        from_identity = punchout_session.from_identity
+        logger.info(f"Retrieved PunchOut session from database for session_key: {session_key}")
+    except PunchOutSession.DoesNotExist:
+        # Fallback to session (if cookies work)
+        return_url = request.session.get('punchout_return_url')
+        buyer_cookie = request.session.get('punchout_buyer_cookie')
+        from_identity = request.session.get('punchout_from_identity', 'UNKNOWN')
+        logger.info(f"Retrieved PunchOut session from cookies for session_key: {session_key}")
+    
+    if not return_url or not buyer_cookie:
+        logger.error(f"Missing PunchOut return URL or buyer cookie for session: {session_key}")
+        return render(request, 'punchout/punchout_error.html', {
+            'error': 'PunchOut session data not found. Please restart the PunchOut process.'
+        })
 
     total_cost = sum(item.subtotal for item in cart_items)
 
-    timestamp = datetime.utcnow().isoformat() + 'Z'
+    # SAP Ariba requires timezone offset format: 2011-11-21T12:59:09-07:00 (not 'Z')
+    from datetime import timezone
+    timestamp = datetime.now(timezone.utc).strftime('%Y-%m-%dT%H:%M:%S+00:00')
     payload_id = f"{int(datetime.utcnow().timestamp())}.{uuid.uuid4()}@kalikaindia.com"
     CXML_CURRENCY = "INR"
     

@@ -274,6 +274,22 @@ document.addEventListener('DOMContentLoaded', function() {
         }, 3000); // Hide after 3 seconds
     }
 
+    // Function to get CSRF token from cookies
+    function getCookie(name) {
+        let cookieValue = null;
+        if (document.cookie && document.cookie !== '') {
+            const cookies = document.cookie.split(';');
+            for (let i = 0; i < cookies.length; i++) {
+                const cookie = cookies[i].trim();
+                if (cookie.substring(0, name.length + 1) === (name + '=')) {
+                    cookieValue = decodeURIComponent(cookie.substring(name.length + 1));
+                    break;
+                }
+            }
+        }
+        return cookieValue;
+    }
+
     document.querySelectorAll('.add-to-cart-btn').forEach(button => {
         button.addEventListener('click', function(event) {
             // Prevent the parent link from navigating
@@ -282,13 +298,22 @@ document.addEventListener('DOMContentLoaded', function() {
             event.stopPropagation();
 
             const itemId = this.dataset.itemId;
-            const url = `/cart/add/${itemId}/`; // Make sure this URL is correct
+            
+            // Preserve punchout_session parameter if present
+            const urlParams = new URLSearchParams(window.location.search);
+            const punchoutSession = urlParams.get('punchout_session');
+            let url = `/cart/add/${itemId}/`;
+            if (punchoutSession) {
+                url += `?punchout_session=${punchoutSession}`;
+            }
+            
+            const csrftoken = getCookie('csrftoken');
 
             fetch(url, {
                 method: 'POST', // Use POST for actions that change data
                 headers: {
                     'X-Requested-With': 'XMLHttpRequest',
-                    'X-CSRFToken': '{{ csrf_token }}' // Ensure CSRF token is included
+                    'X-CSRFToken': csrftoken // Get CSRF token from cookie
                 }
             })
             .then(response => {

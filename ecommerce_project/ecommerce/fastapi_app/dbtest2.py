@@ -3,9 +3,11 @@ import csv
 from datetime import datetime
 import os # Import os for path manipulation
 from tabulate import tabulate # For printing table schemas
+from dotenv import load_dotenv 
 
 # Database connection parameters
 # MUST be set in environment variables
+load_dotenv()
 db_host = os.getenv("DB_HOST", "localhost")
 db_name = os.getenv("DB_NAME")
 db_user = os.getenv("DB_USER")
