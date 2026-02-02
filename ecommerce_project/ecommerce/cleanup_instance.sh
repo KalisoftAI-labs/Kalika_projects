@@ -3,11 +3,12 @@
 ###############################################################################
 # EC2 Instance Cleanup Script
 # Description: Removes unnecessary files and caches to free up disk space
-# Usage: ./cleanup_instance.sh
+# Usage: sudo ./cleanup_instance.sh (run with sudo to avoid password prompts)
 # Recommended: Run daily via cron job
 ###############################################################################
 
-set -e  # Exit on error
+# Don't exit on errors - continue cleaning what we can
+set +e
 
 echo "=========================================="
 echo "EC2 Instance Cleanup Started"
@@ -38,9 +39,12 @@ echo ""
 # 2. APT Package Manager Cleanup
 ###############################################################################
 echo "[2/10] Cleaning APT cache..."
-sudo apt-get clean -y > /dev/null 2>&1
-sudo apt-get autoclean -y > /dev/null 2>&1
-sudo apt-get autoremove -y > /dev/null 2>&1
+echo "  → Running apt-get clean..."
+sudo apt-get clean -y 2>&1 | grep -v "^$" || true
+echo "  → Running apt-get autoclean..."
+sudo apt-get autoclean -y 2>&1 | grep -v "^$" || true
+echo "  → Running apt-get autoremove..."
+sudo apt-get autoremove -y 2>&1 | tail -5 || true
 echo "✓ APT cache cleaned"
 echo ""
 
@@ -48,7 +52,8 @@ echo ""
 # 3. System Logs Cleanup (older than 7 days)
 ###############################################################################
 echo "[3/10] Cleaning old system logs..."
-sudo journalctl --vacuum-time=7d > /dev/null 2>&1
+echo "  → Vacuuming journal logs..."
+sudo journalctl --vacuum-time=7d 2>&1 | tail -3 || true
 echo "✓ Old journal logs removed (kept last 7 days)"
 echo ""
 

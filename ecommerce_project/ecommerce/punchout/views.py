@@ -80,6 +80,35 @@ def _generate_punchout_setup_response(start_page_url):
     
     return xml_string
 
+def _generate_cxml_error_response(status_code, status_text):
+    """
+    Generates a cXML error response for PunchOut failures.
+    This ensures ALL responses are cXML-compliant, even errors.
+    """
+    from datetime import timezone
+    timestamp = datetime.now(timezone.utc).strftime('%Y-%m-%dT%H:%M:%S+00:00')
+    payload_id = f"{int(datetime.utcnow().timestamp())}.{uuid.uuid4()}@kalikaindia.com"
+    
+    root = etree.Element(
+        "cXML",
+        payloadID=payload_id,
+        timestamp=timestamp
+    )
+    
+    response = etree.SubElement(root, "Response")
+    status = etree.SubElement(response, "Status", code=str(status_code), text=status_text)
+    
+    doctype = '<!DOCTYPE cXML SYSTEM "http://xml.cXML.org/schemas/cXML/1.2.014/cXML.dtd">'
+    xml_string = etree.tostring(
+        root,
+        pretty_print=True,
+        xml_declaration=True,
+        encoding='UTF-8',
+        doctype=doctype
+    ).decode('utf-8')
+    
+    return xml_string
+
 @csrf_exempt
 def punchout_setup(request):
     if request.method == 'POST':
@@ -94,11 +123,13 @@ def punchout_setup(request):
 
         if not cxml_payload:
             logger.error("PunchOut setup failed: No cXML payload received (neither in POST data nor body).")
-            return render(request, 'punchout/punchout_error.html', {'error': 'cXML payload was not received.'})
+            error_cxml = _generate_cxml_error_response(400, "No cXML payload received")
+            return HttpResponse(error_cxml, content_type='text/xml; charset=utf-8', status=400)
 
         root = _parse_cxml(cxml_payload)
         if root is None:
-            return render(request, 'punchout/punchout_error.html', {'error': 'Failed to parse incoming cXML.'})
+            error_cxml = _generate_cxml_error_response(400, "Failed to parse incoming cXML")
+            return HttpResponse(error_cxml, content_type='text/xml; charset=utf-8', status=400)
 
         # --- Credential Verification ---
         # ▼▼▼ [CHANGE 3] REMOVED the 'cxml:' prefixes from all XPath strings below ▼▼▼
@@ -107,16 +138,24 @@ def punchout_setup(request):
         if shared_secret:
             if shared_secret != settings.PUNCHOUT_SHARED_SECRET:
                 logger.warning("PunchOut setup failed: Invalid SharedSecret provided.")
-                return render(request, 'punchout/punchout_error.html', {'error': 'Authentication failed. Invalid credentials.'})
+                error_cxml = _generate_cxml_error_response(401, "Authentication failed. Invalid credentials")
+                return HttpResponse(error_cxml, content_type='text/xml; charset=utf-8', status=401)
 
         # --- Identity and URL Extraction ---
         from_identity = _get_cxml_text(root, ".//Header/From/Credential/Identity")
+        to_identity = _get_cxml_text(root, ".//Header/To/Credential/Identity")
         browser_post_url = _get_cxml_text(root, ".//PunchOutSetupRequest/BrowserFormPost/URL")
         buyer_cookie = _get_cxml_text(root, ".//PunchOutSetupRequest/BuyerCookie")
 
+        # Validate To Identity matches our NetworkID
+        if to_identity and to_identity != settings.PUNCHOUT_ANID:
+            logger.warning(f"PunchOut setup: To Identity mismatch. Expected {settings.PUNCHOUT_ANID}, got {to_identity}")
+            # Note: Not failing here as some buyers might not send To/Identity
+        
         if not all([from_identity, browser_post_url, buyer_cookie]):
             logger.error(f"PunchOut setup failed: Missing required cXML fields. Found Identity: {from_identity}, URL: {browser_post_url}, BuyerCookie: {buyer_cookie}")
-            return render(request, 'punchout/punchout_error.html', {'error': 'Incomplete cXML data.'})
+            error_cxml = _generate_cxml_error_response(400, "Incomplete cXML data. Missing required fields")
+            return HttpResponse(error_cxml, content_type='text/xml; charset=utf-8', status=400)
 
         # --- User Management ---
         try:
@@ -134,7 +173,8 @@ def punchout_setup(request):
 
         except Exception as e:
             logger.error(f"Error during PunchOut user creation/login: {e}")
-            return render(request, 'punchout/punchout_error.html', {'error': 'User management failed.'})
+            error_cxml = _generate_cxml_error_response(500, "Internal error during user management")
+            return HttpResponse(error_cxml, content_type='text/xml; charset=utf-8', status=500)
 
         # --- Store PunchOut session data ---
         # Store in both session (if it works) and database (fallback for iframe issues)
@@ -220,8 +260,11 @@ def punchout_setup(request):
         
         return HttpResponse(setup_response_xml, content_type='text/xml; charset=utf-8')
 
-    #return HttpResponseBadRequest("This endpoint only supports POST requests.") #Undo this if issue still persists
-    return HttpResponseRedirect("https://kalikaindia.com/")
+    # Non-POST requests (e.g., browser GET) should still return cXML error
+    # This makes the endpoint SAP Ariba compliant even for invalid requests
+    error_cxml = _generate_cxml_error_response(405, "Can not parse request cXML!")
+    logger.warning(f"PunchOut setup received non-POST request from {request.META.get('REMOTE_ADDR')}")
+    return HttpResponse(error_cxml, content_type='text/xml; charset=utf-8', status=405)
 
 
 def return_cart_to_ariba(request):
@@ -314,15 +357,15 @@ def _prepare_and_return_cart_to_ariba(request, session_key=None):
     from_cred = etree.SubElement(from_elem, "Credential", domain="NetworkID")
     etree.SubElement(from_cred, "Identity").text = from_identity
     
-    # To - The buyer (SAP Ariba) - mirrors From
+    # To - The supplier (Kalika India) per SAP Ariba documentation
     to_elem = etree.SubElement(header, "To")
     to_cred = etree.SubElement(to_elem, "Credential", domain="NetworkID")
-    etree.SubElement(to_cred, "Identity").text = from_identity
+    etree.SubElement(to_cred, "Identity").text = settings.PUNCHOUT_ANID
     
     # Sender - The supplier (your system)
     sender_elem = etree.SubElement(header, "Sender")
     sender_cred = etree.SubElement(sender_elem, "Credential", domain="NetworkID")
-    etree.SubElement(sender_cred, "Identity").text = settings.PUNCHOUT_SUPPLIER_DUNS or "kalikaindia.com"
+    etree.SubElement(sender_cred, "Identity").text = settings.PUNCHOUT_ANID
     if settings.PUNCHOUT_SHARED_SECRET:
         etree.SubElement(sender_cred, "SharedSecret").text = settings.PUNCHOUT_SHARED_SECRET
     etree.SubElement(sender_elem, "UserAgent").text = "Kalika India PunchOut 1.0"
@@ -332,7 +375,7 @@ def _prepare_and_return_cart_to_ariba(request, session_key=None):
     poom = etree.SubElement(message, "PunchOutOrderMessage")
     etree.SubElement(poom, "BuyerCookie").text = buyer_cookie
     
-    poom_header = etree.SubElement(poom, "PunchOutOrderMessageHeader", operationAllowed="create")
+    poom_header = etree.SubElement(poom, "PunchOutOrderMessageHeader", operationAllowed="edit")
     total_element = etree.SubElement(poom_header, "Total")
     etree.SubElement(total_element, "Money", currency=CXML_CURRENCY).text = str(round(total_cost, 2))
 

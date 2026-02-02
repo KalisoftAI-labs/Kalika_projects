@@ -9,9 +9,9 @@ TIMESTAMP: 2025-06-26
 ITEMCOUNT: 5
 FIELDNAMES: Supplier ID,Supplier Part ID,Manufacturer Part ID,Item Description,SPSC Code,Unit Price,Unit of Measure,Lead Time,Manufacturer Name,Supplier URL,Manufacturer URL,Market Price,PunchOut Enabled
 DATA
-AN00012345678,415263,TTSIBM412CID,KALIKA ENTERPRISES,43191504,1.00,EA,1,Intellidata,http://127.0.0.1:8000/punchout/setup/,,1.20,TRUE
-AN00012345678,2772967,IDG076450049X,Excel 97 for Dummies Quick Reference Book,55101509,19.99,EA,1,IDG Books Worldwide,http://127.0.0.1:8000/punchout/setup/,,22.00,TRUE
-AN00012345678,2772276,IDG076458722,Blue Ballpoint Pens,44121704,5.45,DZN,1,Bic,http://127.0.0.1:8000/punchout/setup/,,7.00,TRUE
-AN00012345678,2772981,IDG076450052X,Manilla Folders,44122011,19.99,GRO,1,Mead,http://127.0.0.1:8000/punchout/setup/,,22.00,TRUE
-AN00012345678,2772985,IDG07645762,Stapler Swingline 405,44121615,4.95,EA,1,Swingline,http://127.0.0.1:8000/punchout/setup/,,6.29,TRUE
+AN11183758773,415263,TTSIBM412CID,KALIKA ENTERPRISES,43191504,1.00,EA,1,Intellidata,https://kalikaindia.com/punchout/setup/,,1.20,TRUE
+AN11183758773,2772967,IDG076450049X,Excel 97 for Dummies Quick Reference Book,55101509,19.99,EA,1,IDG Books Worldwide,https://kalikaindia.com/punchout/setup/,,22.00,TRUE
+AN11183758773,2772276,IDG076458722,Blue Ballpoint Pens,44121704,5.45,DZN,1,Bic,https://kalikaindia.com/punchout/setup/,,7.00,TRUE
+AN11183758773,2772981,IDG076450052X,Manilla Folders,44122011,19.99,GRO,1,Mead,https://kalikaindia.com/punchout/setup/,,22.00,TRUE
+AN11183758773,2772985,IDG07645762,Stapler Swingline 405,44121615,4.95,EA,1,Swingline,https://kalikaindia.com/punchout/setup/,,6.29,TRUE
 ENDOFDATA

@@ -13,10 +13,10 @@
             <div>
                 <h3 class="font-semibold text-lg mb-3">Categories</h3>
                 <ul class="space-y-2">
-                    {% for category in categories %}
+                    {% for category_name, category_data in categories.items %}
                     <li>
-                        <a href="{% url 'catalog:products_by_category' category.name %}" class="text-gray-600 hover:text-blue-600 transition duration-300">
-                            {{ category.category_name }}
+                        <a href="{% url 'catalog:products_by_category' main_category_name=category_name %}" class="text-gray-600 hover:text-blue-600 transition duration-300">
+                            {{ category_name }} ({{ category_data.product_count }})
                         </a>
                     </li>
                     {% empty %}
