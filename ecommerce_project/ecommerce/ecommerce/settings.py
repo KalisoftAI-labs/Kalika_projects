@@ -27,7 +27,8 @@ ALLOWED_HOSTS = [
     'localhost', 
     '127.0.0.1',
     '34.226.85.194',  # EC2 public IP
-    '172.31.17.182'   # EC2 private IP
+    '172.31.17.182',   # EC2 private IP
+    '35.224.213.238',  # New VM public IP
 ]
 
 INSTALLED_APPS = [
@@ -126,7 +127,6 @@ AWS_REGION = 'us-east-1'
 AWS_S3_BUCKET_NAME = 'kalika-ecom'
 
 SESSION_ENGINE = 'django.contrib.sessions.backends.db'
-SESSION_COOKIE_SAMESITE = 'Lax'
 SESSION_COOKIE_HTTPONLY = True
 SESSION_COOKIE_AGE = 86400  # 24 hours
 
@@ -162,20 +162,24 @@ ARIBA_NETWORK_ID = os.getenv('ARIBA_NETWORK_ID')
 ARIBA_ENDPOINT = 'https://test.ariba.com/punchout/cxml/setup'
 
 # --- Security Settings ---
-# For production deployment, these MUST be enabled
+# For production deployment with HTTPS/SSL
 SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
 USE_X_FORWARDED_HOST = True
 USE_X_FORWARDED_PORT = True
 
-# Set to True for production with HTTPS
-SECURE_SSL_REDIRECT = True  # Enable in production
-SESSION_COOKIE_SECURE = True  # Cookies only over HTTPS
-CSRF_COOKIE_SECURE = True     # CSRF cookies only over HTTPS
-#SESSION_COOKIE_SECURE = False  # Set to True in production with HTTPS
-#CSRF_COOKIE_SECURE = False     # Set to True in production with HTTPS
+# SSL/HTTPS Settings - Currently DISABLED for HTTP testing
+# TODO: Enable these once SSL certificate is installed
+SECURE_SSL_REDIRECT = False  # Set to True when SSL is configured
+SESSION_COOKIE_SECURE = False  # Set to True when using HTTPS only
+CSRF_COOKIE_SECURE = False     # Set to True when using HTTPS only
 
 # CSRF Settings for PunchOut Integration
 CSRF_TRUSTED_ORIGINS = [
+    # HTTP origins for testing without SSL
+    'http://35.224.213.238',
+    'http://kalikaindia.com',
+    'http://www.kalikaindia.com',
+    # HTTPS origins for production (enable when SSL is configured)
     'https://kalikaindia.com',
     'https://www.kalikaindia.com',
     'https://service.ariba.com',
@@ -184,9 +188,10 @@ CSRF_TRUSTED_ORIGINS = [
     'https://*.aribanetwork.com',
 ]
 
-# Allow cookies to work in iframes (required for PunchOut)
-CSRF_COOKIE_SAMESITE = 'None'  # Required for cross-site iframe embedding
-SESSION_COOKIE_SAMESITE = 'None'  # Required for cross-site iframe embedding
+# Cookie Settings for PunchOut Integration
+# Note: SameSite='None' requires HTTPS. Use 'Lax' for HTTP testing
+CSRF_COOKIE_SAMESITE = 'Lax' if not CSRF_COOKIE_SECURE else 'None'
+SESSION_COOKIE_SAMESITE = 'Lax' if not SESSION_COOKIE_SECURE else 'None'
 CSRF_COOKIE_HTTPONLY = False  # Allow JavaScript access to CSRF token in iframe context
 
 # Additional security headers

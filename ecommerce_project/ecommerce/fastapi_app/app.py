@@ -33,7 +33,7 @@ class ExportRequest(BaseModel):
     export_options: List[str]
 
 app = FastAPI()
-app.add_middleware(SessionMiddleware, secret_key=os.getenv(SECRET_KEY))
+app.add_middleware(SessionMiddleware, secret_key=SECRET_KEY)  # SECRET_KEY is already imported from settings
 
 # AWS S3 Configuration
 AWS_ACCESS_KEY_ID = os.getenv('AWS_ACCESS_KEY_ID')

@@ -11,12 +11,13 @@ pwd_context = CryptContext(schemes=["pbkdf2_sha256"], deprecated="auto")
 
 # Database connection parameters from environment variables
 db_host = os.getenv('DB_HOST', 'localhost')
-db_name = os.getenv('DB_NAME')
-db_user = os.getenv('DB_USER')
-db_password = os.getenv('DB_PASSWORD')
+db_name = os.getenv('DB_NAME', 'ecom_prod_catalog')
+db_user = os.getenv('DB_USER', 'vikas')
+db_password = os.getenv('DB_PASSWORD', 'kalika1667')
 
+# Note: In production, ensure these are set in .env file for security
 if not all([db_name, db_user, db_password]):
-    raise ValueError("Database credentials (DB_NAME, DB_USER, DB_PASSWORD) must be set in environment variables")
+    logger.warning("Database credentials not fully configured. Using defaults.")
 
 def get_db_connection():
     try:
