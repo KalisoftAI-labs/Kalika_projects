@@ -111,8 +111,9 @@ class RateLimitMiddleware:
 
 class PunchoutCSPMiddleware:
     """
-    Middleware to allow SAP Ariba and other PunchOut systems to frame the catalog.
-    This sets Content-Security-Policy frame-ancestors to permit iframing.
+    Middleware for PunchOut-specific headers.
+    NOTE: Content-Security-Policy is handled by nginx for better performance and consistency.
+    This middleware is kept for future PunchOut-specific header needs.
     """
     
     def __init__(self, get_response):
@@ -121,15 +122,8 @@ class PunchoutCSPMiddleware:
     def __call__(self, request):
         response = self.get_response(request)
         
-        # Allow framing by SAP Ariba and self (for PunchOut integration)
-        # This is required for the catalog to work within Ariba's procurement interface
-        response["Content-Security-Policy"] = (
-            "frame-ancestors 'self' "
-            "https://*.ariba.com "
-            "https://*.sap.com "
-            "https://service.ariba.com "
-            "https://*.aribanetwork.com"
-        )
+        # CSP header is set by nginx (see /etc/nginx/sites-available/kalikaproject)
+        # This avoids duplicate headers and ensures consistency across all responses
         
         return response
 
@@ -168,6 +162,33 @@ class PunchoutSessionMiddleware:
                     # Replace request.session with the new session object
                     request.session = new_session
                     logger.debug(f"PunchOut session activated: {punchout_session}")
+                    
+                    # CRITICAL: Manually authenticate the user from the session
+                    # AuthenticationMiddleware already ran, so we need to load the user manually
+                    user_id = new_session.get('_auth_user_id')
+                    backend_path = new_session.get('_auth_user_backend')
+                    
+                    if user_id and backend_path:
+                        from django.contrib.auth import get_user_model
+                        from django.utils.functional import SimpleLazyObject
+                        
+                        def get_user():
+                            try:
+                                User = get_user_model()
+                                user = User.objects.get(pk=user_id)
+                                # Set the backend attribute for the user
+                                user.backend = backend_path
+                                logger.info(f"PunchOut user authenticated from session: {user.username} (ID: {user_id})")
+                                return user
+                            except User.DoesNotExist:
+                                logger.warning(f"User ID {user_id} from PunchOut session not found in database")
+                                from django.contrib.auth.models import AnonymousUser
+                                return AnonymousUser()
+                        
+                        # Replace request.user with the authenticated user
+                        request.user = SimpleLazyObject(get_user)
+                    else:
+                        logger.debug(f"No authenticated user in PunchOut session {punchout_session}")
                     
                 except Exception as e:
                     # If session override fails, log and continue with default session

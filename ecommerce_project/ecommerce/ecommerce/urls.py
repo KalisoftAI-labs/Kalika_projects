@@ -4,7 +4,6 @@ from django.views.generic import RedirectView
 
 urlpatterns = [
     path('django-admin/', admin.site.urls), 
-    path('chatbot/', include('chatbot.urls')),
     path('admin', RedirectView.as_view(url='/admin/', permanent=False)),
     path('', include('catalog.urls')),
     path('cart/', include('cart.urls')),

@@ -56,6 +56,12 @@ def view_cart(request):
     session_key = request.session.session_key
     cart_items = CartItem.objects.filter(session_key=session_key)
     total = sum(item.subtotal for item in cart_items) # You can even use the property here to make it cleaner
+    
+    # Check for PunchOut warning message from edit/inspect mode
+    punchout_warning = request.session.pop('punchout_warning', None)
+    if punchout_warning:
+        messages.warning(request, punchout_warning)
+        logger.info(f"Displayed PunchOut warning to user: {punchout_warning}")
 
     for item in cart_items:
         # The problematic line has been removed.
@@ -159,10 +165,12 @@ def checkout(request):
     punchout_return_url = request.session.get('punchout_return_url', settings.PUNCHOUT_RETURN_URL)
     punchout_user = request.session.get('punchout_user', request.user.email if request.user.is_authenticated else 'test@localhost')
     punchout_buyer_cookie = request.session.get('punchout_buyer_cookie', '123456')
-    logger.info(f"Checkout accessed with method: {request.method}, session_key: {session_key}, is_punchout: {is_punchout}")
+    logger.info(f"Checkout accessed with method: {request.method}, session_key: {session_key}, is_punchout: {is_punchout}, authenticated: {request.user.is_authenticated}")
 
-    if not request.user.is_authenticated:
-        logger.info(f"User not authenticated for session_key {session_key}, redirecting to login.")
+    # CRITICAL: PunchOut users are authenticated via session, not login page
+    # Do NOT redirect to login for punchout sessions
+    if not is_punchout and not request.user.is_authenticated:
+        logger.info(f"Non-punchout user not authenticated for session_key {session_key}, redirecting to login.")
         messages.warning(request, "Please log in to proceed with checkout.")
         return redirect('accounts:login')
 

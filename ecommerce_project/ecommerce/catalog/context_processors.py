@@ -56,3 +56,13 @@ def cart_item_count(request):
     cart_items = CartItem.objects.filter(session_key=request.session.session_key)
     total_quantity = sum(item.quantity for item in cart_items)
     return {'cart_item_count': total_quantity}
+
+def punchout_context(request):
+    """Add punchout session info to all templates for preserving session across navigation."""
+    punchout_session = request.GET.get('punchout_session')
+    is_punchout = request.session.get('is_punchout', False) or bool(punchout_session)
+    
+    return {
+        'punchout_session': punchout_session or (request.session.session_key if is_punchout else None),
+        'is_punchout': is_punchout,
+    }

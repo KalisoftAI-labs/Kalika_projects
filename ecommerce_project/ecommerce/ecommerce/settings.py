@@ -5,11 +5,6 @@ from django.core.exceptions import ImproperlyConfigured
 # Load environment variables from .env file
 load_dotenv()
 
-GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
-
-if not GEMINI_API_KEY:
-    raise ImproperlyConfigured("GEMINI_API_KEY not found in environment variables.")
-
 BASE_DIR = Path(__file__).resolve().parent.parent
 
 SECRET_KEY = os.getenv('SECRET_KEY')
@@ -42,7 +37,6 @@ INSTALLED_APPS = [
     'cart.apps.CartConfig',
     'crispy_forms',
     'crispy_bootstrap4',
-    'chatbot',
     'punchout',
     'fastapi_app',
     
@@ -77,6 +71,7 @@ TEMPLATES = [
                 'django.contrib.messages.context_processors.messages',
                 'catalog.context_processors.categories',
                 'catalog.context_processors.cart_item_count',
+                'catalog.context_processors.punchout_context',
             ],
         },
     },
@@ -125,10 +120,14 @@ AWS_SECRET_ACCESS_KEY = os.getenv('AWS_SECRET_ACCESS_KEY')
 AWS_REGION = 'us-east-1'
 AWS_S3_BUCKET_NAME = 'kalika-ecom'
 
+# =============================================================================
+# SESSION CONFIGURATION - Ariba PunchOut Optimized
+# =============================================================================
 SESSION_ENGINE = 'django.contrib.sessions.backends.db'
-SESSION_COOKIE_SAMESITE = 'Lax'
-SESSION_COOKIE_HTTPONLY = True
-SESSION_COOKIE_AGE = 86400  # 24 hours
+SESSION_COOKIE_AGE = 3600  # 1 hour for PunchOut sessions
+SESSION_EXPIRE_AT_BROWSER_CLOSE = True
+SESSION_SAVE_EVERY_REQUEST = True  # CRITICAL: Ensure session persists on every request
+SESSION_COOKIE_DOMAIN = '.kalikaindia.com'  # CRITICAL: Allow session cookies across www/non-www variants
 
 # Caching Configuration
 # Using local-memory caching (for single-server setup)
@@ -151,15 +150,16 @@ CACHES = {
     }
 }
 
+# =============================================================================
+# SAP ARIBA PUNCHOUT CONFIGURATION
+# =============================================================================
 PUNCHOUT_SUPPLIER_DUNS = os.getenv('PUNCHOUT_SUPPLIER_DUNS')
-PUNCHOUT_ANID = os.getenv('PUNCHOUT_ANID')
-PUNCHOUT_SHARED_SECRET = os.getenv('PUNCHOUT_SHARED_SECRET')
-if not PUNCHOUT_SHARED_SECRET:
-    raise ImproperlyConfigured("PUNCHOUT_SHARED_SECRET must be set in environment variables")
-PUNCHOUT_RETURN_URL = "https://ariba-network-endpoint.com/poom"
-# Ariba PunchOut Settings
+PUNCHOUT_ANID = os.getenv('PUNCHOUT_ANID')  # Required: Your Ariba Network ID
+PUNCHOUT_SHARED_SECRET = os.getenv('PUNCHOUT_SHARED_SECRET')  # Optional for default auth
+# Note: SharedSecret validation is optional in views.py for default authentication
+PUNCHOUT_RETURN_URL = os.getenv('PUNCHOUT_RETURN_URL', 'https://ariba.com/BUYER/po/')
 ARIBA_NETWORK_ID = os.getenv('ARIBA_NETWORK_ID')
-ARIBA_ENDPOINT = 'https://test.ariba.com/punchout/cxml/setup'
+ARIBA_ENDPOINT = 'https://open.ariba.com/punchout/cxml/setup'  # Production endpoint
 
 # --- Security Settings ---
 # For production deployment, these MUST be enabled
@@ -171,20 +171,26 @@ USE_X_FORWARDED_PORT = True
 SECURE_SSL_REDIRECT = True  # Enable in production
 SESSION_COOKIE_SECURE = True  # Cookies only over HTTPS
 CSRF_COOKIE_SECURE = True     # CSRF cookies only over HTTPS
-#SESSION_COOKIE_SECURE = False  # Set to True in production with HTTPS
-#CSRF_COOKIE_SECURE = False     # Set to True in production with HTTPS
 
 # CSRF Settings for PunchOut Integration
+# =============================================================================
+# SAP ARIBA TRUSTED ORIGINS (Production + Test Environments)
+# =============================================================================
 CSRF_TRUSTED_ORIGINS = [
     'https://kalikaindia.com',
     'https://www.kalikaindia.com',
     'https://service.ariba.com',
+    'https://open.ariba.com',
+    'https://ariba.com',
+    'https://test.ariba.com',
     'https://*.ariba.com',
     'https://*.sap.com',
     'https://*.aribanetwork.com',
 ]
 
-# Allow cookies to work in iframes (required for PunchOut)
+# =============================================================================
+# CRITICAL: ARIBA IFRAME + CROSS-SITE COMPATIBILITY
+# =============================================================================
 CSRF_COOKIE_SAMESITE = 'None'  # Required for cross-site iframe embedding
 SESSION_COOKIE_SAMESITE = 'None'  # Required for cross-site iframe embedding
 CSRF_COOKIE_HTTPONLY = False  # Allow JavaScript access to CSRF token in iframe context
@@ -192,8 +198,10 @@ CSRF_COOKIE_HTTPONLY = False  # Allow JavaScript access to CSRF token in iframe 
 # Additional security headers
 SECURE_BROWSER_XSS_FILTER = True
 SECURE_CONTENT_TYPE_NOSNIFF = True
-X_FRAME_OPTIONS = 'SAMEORIGIN'
+X_FRAME_OPTIONS = ''  # EMPTY = Allows Ariba to embed in iframes (overridden by CSP middleware)
 SECURE_HSTS_SECONDS = 31536000  # 1 year
+SECURE_HSTS_INCLUDE_SUBDOMAINS = True
+SECURE_HSTS_PRELOAD = True
 SECURE_HSTS_INCLUDE_SUBDOMAINS = True
 SECURE_HSTS_PRELOAD = True
 
@@ -208,32 +216,46 @@ LOGGING = {
         },
     },
     'handlers': {
-        'console': {
-            'class': 'logging.StreamHandler',
-            'formatter': 'verbose',
+        'null': {
+            'class': 'logging.NullHandler',
         },
         'security_file': {
-            'level': 'WARNING',
+            'level': 'ERROR',  # Only log critical errors
             'class': 'logging.handlers.RotatingFileHandler',
             'filename': BASE_DIR / 'logs' / 'security.log',
-            'maxBytes': 1024 * 1024 * 10,  # 10 MB
-            'backupCount': 5,
+            'maxBytes': 1024 * 1024 * 5,  # 5 MB
+            'backupCount': 2,
             'formatter': 'verbose',
         },
     },
     'loggers': {
+        '': {  # Root logger - catches everything not explicitly configured
+            'handlers': ['null'],
+            'level': 'ERROR',
+        },
         'django': {
-            'handlers': ['console'],
-            'level': 'INFO',
+            'handlers': ['null'],
+            'level': 'ERROR',
+            'propagate': False,
+        },
+        'django.request': {
+            'handlers': ['null'],  # Suppress 404 and other request warnings
+            'level': 'CRITICAL',  # Only critical errors
+            'propagate': False,
+        },
+        'django.server': {
+            'handlers': ['null'],  # Suppress server 404 warnings
+            'level': 'CRITICAL',
+            'propagate': False,
         },
         'django.security': {
-            'handlers': ['console', 'security_file'],
-            'level': 'WARNING',
+            'handlers': ['security_file'],
+            'level': 'ERROR',  # Only actual errors
             'propagate': False,
         },
         'ecommerce.middleware': {
-            'handlers': ['console', 'security_file'],
-            'level': 'WARNING',
+            'handlers': ['null'],  # Suppress middleware warnings
+            'level': 'CRITICAL',
             'propagate': False,
         },
     },

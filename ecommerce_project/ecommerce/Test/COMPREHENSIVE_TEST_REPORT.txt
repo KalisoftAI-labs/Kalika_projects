@@ -1,0 +1,183 @@
+================================================================================
+COMPREHENSIVE PUNCHOUT SYSTEM TEST REPORT
+SAP Ariba Default Authentication - End-to-End Validation
+================================================================================
+
+Test Date: 2026-02-12 12:39:40
+Base URL: https://www.kalikaindia.com
+Test Identity: TEST_20260212_123938
+
+================================================================================
+EXECUTIVE SUMMARY
+================================================================================
+
+Total Tests: 37
+✅ Passed: 36
+❌ Failed: 0
+⚠️  Warnings: 0
+
+Success Rate: 97.3%
+
+🟢 STATUS: READY FOR PRODUCTION
+
+================================================================================
+DETAILED TEST RESULTS
+================================================================================
+
+CONFIG
+--------------------------------------------------------------------------------
+
+✅ PUNCHOUT_ANID: PASS
+   Value: AN11183758773
+
+✅ PUNCHOUT_SHARED_SECRET: PASS
+   Value: ***
+
+✅ PUNCHOUT_SUPPLIER_DUNS: PASS
+   Value: 651009354
+
+✅ SESSION_COOKIE_SAMESITE: PASS
+   Value: None
+
+✅ SESSION_SAVE_EVERY_REQUEST: PASS
+   Value: True
+
+✅ X_FRAME_OPTIONS: PASS
+   Value: 
+
+✅ CSRF_COOKIE_SAMESITE: PASS
+   Value: None
+
+✅ SameSite Cookie Setting: PASS
+   Configured for iframe support
+
+PUNCHOUT SETUP
+--------------------------------------------------------------------------------
+
+✅ HTTP Status: PASS
+   Status: 200
+
+✅ cXML Structure: PASS
+   Valid cXML root element
+
+✅ Status Code: PASS
+   200 - success
+
+✅ StartPage URL: PASS
+   https://www.kalikaindia.com/?punchout_session=sz3azg6i7f2mgwxt67d4xsbv62zafmpk
+
+✅ Session Key Extraction: PASS
+   Session: sz3azg6i7f2mgwxt67d4...
+
+✅ URL Format: PASS
+   Uses www subdomain
+
+SESSION
+--------------------------------------------------------------------------------
+
+✅ Django Session Exists: PASS
+   Session key: sz3azg6i7f2mgwxt67d4...
+
+✅ is_punchout Flag: PASS
+   Set to True
+
+✅ User Authentication: PASS
+   User ID: 32
+
+✅ User Object: PASS
+   Username: 651009354
+
+✅ Buyer Identifier: PASS
+   Identifier: 651009354
+
+✅ Return URL: PASS
+   https://test.ariba.com/Buyer/Main/ad/punchoutRetur...
+
+✅ Buyer Cookie: PASS
+   TEST_BUYER_COOKIE_20260212123938
+
+✅ PunchOut Session DB: PASS
+   Identity: 651009354
+
+STARTPAGE
+--------------------------------------------------------------------------------
+
+✅ HTTP Status: PASS
+   Status: 200
+
+✅ Content Type: PASS
+   text/html; charset=utf-8
+
+✅ HTML DOCTYPE: PASS
+   Present
+
+✅ HTML Title Tag: PASS
+   Present
+
+✅ HTML Body Tag: PASS
+   Present
+
+SECURITY
+--------------------------------------------------------------------------------
+
+✅ Content-Security-Policy: PASS
+   frame-ancestors configured
+
+✅ CSP Ariba Domains: PASS
+   Includes ariba.com
+
+✅ X-Frame-Options: PASS
+   Empty (allows iframe)
+
+✅ HSTS Header: PASS
+   max-age=31536000; includeSubDomains; preload...
+
+✅ HTTPS Enabled: PASS
+   Site uses HTTPS
+
+CART
+--------------------------------------------------------------------------------
+
+✅ Cart Page Access: PASS
+   Successfully accessed cart
+
+ℹ️ Cart Items in DB: INFO
+   0 items found
+
+CATALOG
+--------------------------------------------------------------------------------
+
+✅ Products Available: PASS
+   4746 products in catalog
+
+✅ Sample Product Fields: PASS
+   Fields: item_code, product_title, price, unit_of_measure
+
+AUTHENTICATION
+--------------------------------------------------------------------------------
+
+✅ Invalid Credentials Rejected: PASS
+   Status: 401
+
+================================================================================
+RECOMMENDATIONS
+================================================================================
+
+✅ SYSTEM VALIDATION:
+  - All critical tests passed
+  - PunchOut Setup Request/Response: Working
+  - Session Management: Operational
+  - Security Headers: Configured
+  - Authentication: Validated
+
+✅ READY FOR SAP ARIBA PRODUCTION TESTING
+
+================================================================================
+SYSTEM CONFIGURATION
+================================================================================
+
+PunchOut ANID: AN11183758773
+Supplier DUNS: 651009354
+Session Cookie SameSite: None
+X-Frame-Options: '' (empty = allows iframe)
+Session Save Every Request: True

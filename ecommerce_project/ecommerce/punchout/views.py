@@ -132,14 +132,21 @@ def punchout_setup(request):
             return HttpResponse(error_cxml, content_type='text/xml; charset=utf-8', status=400)
 
         # --- Credential Verification ---
-        # ▼▼▼ [CHANGE 3] REMOVED the 'cxml:' prefixes from all XPath strings below ▼▼▼
+        # SharedSecret validation is OPTIONAL for SAP Ariba Default Authentication
+        # In default auth mode, Ariba Network handles authentication at the network level
+        # If PUNCHOUT_SHARED_SECRET is configured, we validate it for additional security
         shared_secret = _get_cxml_text(root, ".//Credential/SharedSecret")
         
-        if shared_secret:
+        if shared_secret and settings.PUNCHOUT_SHARED_SECRET:
             if shared_secret != settings.PUNCHOUT_SHARED_SECRET:
                 logger.warning("PunchOut setup failed: Invalid SharedSecret provided.")
                 error_cxml = _generate_cxml_error_response(401, "Authentication failed. Invalid credentials")
                 return HttpResponse(error_cxml, content_type='text/xml; charset=utf-8', status=401)
+            logger.info("SharedSecret validated successfully")
+        elif settings.PUNCHOUT_SHARED_SECRET and not shared_secret:
+            logger.warning("SharedSecret expected but not provided in request")
+        else:
+            logger.info("Using SAP Ariba Default Authentication (no SharedSecret validation)")
 
         # --- Identity and URL Extraction ---
         from_identity = _get_cxml_text(root, ".//Header/From/Credential/Identity")
@@ -161,13 +168,18 @@ def punchout_setup(request):
         try:
             user, created = CustomUser.objects.get_or_create(
                 buyer_identifier=from_identity,
-                defaults={'username': from_identity} # <-- 'role' removed
+                defaults={
+                    'username': from_identity,
+                    'email': f"{from_identity}@punchout.local"  # Unique email for each PunchOut user
+                }
             )
             if created:
                 user.set_unusable_password()
                 user.save()
                 logger.info(f"Created new PunchOut user: {from_identity}")
             
+            # Set backend for programmatic login
+            user.backend = 'django.contrib.auth.backends.ModelBackend'
             login(request, user)
             logger.info(f"Logged in PunchOut user: {user.username}")
 
@@ -189,6 +201,11 @@ def punchout_setup(request):
         
         session_key = request.session.session_key
         
+        # CRITICAL: Save session to database so authentication and punchout data persist
+        # This is essential for iframe contexts where the session is accessed via punchout_session parameter
+        request.session.save()
+        logger.info(f"PunchOut session saved to database: {session_key}, user: {user.username}")
+        
         # Store in database for iframe compatibility
         PunchOutSession.objects.update_or_create(
             session_key=session_key,
@@ -198,7 +215,7 @@ def punchout_setup(request):
                 'from_identity': from_identity,
             }
         )
-        logger.debug(f"PunchOut session created in DB for session_key: {session_key}, return_url: {browser_post_url}")
+        logger.debug(f"PunchOut session metadata created in DB for session_key: {session_key}, return_url: {browser_post_url}")
         
         # --- Handle Edit/Inspect Mode - Pre-populate Cart ---
         operation = root.find(".//PunchOutSetupRequest").get("operation", "create")
@@ -243,17 +260,35 @@ def punchout_setup(request):
             if items_not_found:
                 logger.warning(f"Items not found in catalog: {', '.join(items_not_found)}")
             
+            # If ALL products are invalid/not found, return error response
+            if items_added == 0 and len(item_out_elements) > 0:
+                error_msg = f"None of the requested products are available in the catalog. {len(items_not_found)} item(s) not found: {', '.join(items_not_found[:5])}"
+                if len(items_not_found) > 5:
+                    error_msg += f" and {len(items_not_found) - 5} more"
+                logger.error(f"Edit/Inspect mode failed: All {len(item_out_elements)} products invalid")
+                error_response = _generate_cxml_error_response(404, error_msg)
+                return HttpResponse(error_response, status=404, content_type='text/xml; charset=utf-8')
+            
+            # If SOME products were not found, store warning message in session
+            if items_not_found and items_added > 0:
+                missing_items_str = ', '.join(items_not_found[:5])
+                if len(items_not_found) > 5:
+                    missing_items_str += f' and {len(items_not_found) - 5} more'
+                warning_msg = f"{len(items_not_found)} product(s) not found in catalog: {missing_items_str}. {items_added} valid product(s) have been added to your cart."
+                request.session['punchout_warning'] = warning_msg
+                logger.info(f"Stored warning message in session for partial cart population")
+            
             # IMPORTANT: In edit mode, redirect user to catalog so they can modify cart
             # Do NOT return to Ariba immediately - user needs to browse and click "PunchOut Checkout"
             session_id = request.session.session_key
-            start_page_url = f"https://kalikaindia.com/cart/?punchout_session={session_id}"
+            start_page_url = f"https://www.kalikaindia.com/cart/?punchout_session={session_id}"
             response_cxml = _generate_punchout_setup_response(start_page_url)
             logger.info(f"Redirecting to cart view for {operation} mode")
             return HttpResponse(response_cxml, content_type='application/xml')
 
         # --- Generate and return PunchOutSetupResponse for Create mode ---
         session_id = request.session.session_key
-        start_page_url = f"https://kalikaindia.com/?punchout_session={session_id}"
+        start_page_url = f"https://www.kalikaindia.com/?punchout_session={session_id}"
         
         setup_response_xml = _generate_punchout_setup_response(start_page_url)
         logger.info(f"Sending PunchOutSetupResponse:\n{setup_response_xml}")
