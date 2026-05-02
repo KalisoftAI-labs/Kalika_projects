@@ -1,0 +1,547 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>RCA Dashboard - Root Cause Analysis</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+            background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%);
+            color: #e2e8f0;
+            min-height: 100vh;
+        }
+
+        header {
+            background: rgba(15, 23, 42, 0.95);
+            border-bottom: 2px solid #334155;
+            padding: 1.5rem;
+            position: sticky;
+            top: 0;
+            z-index: 100;
+            backdrop-filter: blur(10px);
+        }
+
+        header h1 {
+            font-size: 1.8rem;
+            font-weight: 700;
+            color: #f1f5f9;
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+        }
+
+        .container {
+            max-width: 1600px;
+            margin: 0 auto;
+            padding: 2rem 1rem;
+        }
+
+        .metrics-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+            gap: 1.5rem;
+            margin-bottom: 2rem;
+        }
+
+        .metric-card {
+            background: rgba(30, 41, 59, 0.7);
+            border: 1px solid #334155;
+            border-radius: 0.75rem;
+            padding: 1.5rem;
+            backdrop-filter: blur(10px);
+            transition: all 0.3s ease;
+        }
+
+        .metric-card:hover {
+            background: rgba(30, 41, 59, 0.9);
+            border-color: #475569;
+            transform: translateY(-2px);
+        }
+
+        .metric-label {
+            font-size: 0.875rem;
+            color: #94a3b8;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            margin-bottom: 0.5rem;
+        }
+
+        .metric-value {
+            font-size: 2rem;
+            font-weight: 700;
+            color: #f1f5f9;
+            margin-bottom: 0.5rem;
+        }
+
+        .metric-change {
+            font-size: 0.875rem;
+            display: flex;
+            align-items: center;
+            gap: 0.25rem;
+        }
+
+        .trend-up {
+            color: #ef4444;
+        }
+
+        .trend-down {
+            color: #22c55e;
+        }
+
+        .status-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 1rem;
+            margin-bottom: 2rem;
+        }
+
+        .status-item {
+            background: rgba(30, 41, 59, 0.7);
+            border: 1px solid #334155;
+            border-radius: 0.75rem;
+            padding: 1rem;
+            display: flex;
+            align-items: center;
+            gap: 1rem;
+            backdrop-filter: blur(10px);
+        }
+
+        .status-indicator {
+            width: 3rem;
+            height: 3rem;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: 700;
+            color: white;
+            font-size: 1.5rem;
+        }
+
+        .status-healthy {
+            background: #22c55e;
+        }
+
+        .status-warning {
+            background: #f59e0b;
+        }
+
+        .status-critical {
+            background: #ef4444;
+        }
+
+        .status-info {
+            flex: 1;
+        }
+
+        .status-title {
+            font-weight: 600;
+            color: #f1f5f9;
+            margin-bottom: 0.25rem;
+        }
+
+        .status-detail {
+            font-size: 0.875rem;
+            color: #94a3b8;
+        }
+
+        .chart-section {
+            background: rgba(30, 41, 59, 0.7);
+            border: 1px solid #334155;
+            border-radius: 0.75rem;
+            padding: 1.5rem;
+            margin-bottom: 2rem;
+            backdrop-filter: blur(10px);
+        }
+
+        .section-title {
+            font-size: 1.25rem;
+            font-weight: 600;
+            color: #f1f5f9;
+            margin-bottom: 1rem;
+            padding-bottom: 0.75rem;
+            border-bottom: 2px solid #334155;
+        }
+
+        .chart-placeholder {
+            background: rgba(15, 23, 42, 0.5);
+            border: 2px dashed #475569;
+            border-radius: 0.5rem;
+            padding: 3rem;
+            text-align: center;
+            color: #94a3b8;
+            min-height: 400px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .incidents-table {
+            width: 100%;
+            border-collapse: collapse;
+            background: rgba(15, 23, 42, 0.5);
+            border-radius: 0.5rem;
+            overflow: hidden;
+        }
+
+        .incidents-table thead {
+            background: rgba(30, 41, 59, 0.9);
+        }
+
+        .incidents-table th {
+            padding: 1rem;
+            text-align: left;
+            font-weight: 600;
+            color: #cbd5e1;
+            border-bottom: 2px solid #334155;
+            text-transform: uppercase;
+            font-size: 0.875rem;
+            letter-spacing: 0.05em;
+        }
+
+        .incidents-table td {
+            padding: 1rem;
+            border-bottom: 1px solid #334155;
+            color: #e2e8f0;
+        }
+
+        .incidents-table tbody tr:hover {
+            background: rgba(30, 41, 59, 0.6);
+        }
+
+        .severity-badge {
+            display: inline-block;
+            padding: 0.25rem 0.75rem;
+            border-radius: 9999px;
+            font-size: 0.875rem;
+            font-weight: 600;
+            text-transform: capitalize;
+        }
+
+        .severity-critical {
+            background: rgba(239, 68, 68, 0.2);
+            color: #fca5a5;
+        }
+
+        .severity-high {
+            background: rgba(245, 158, 11, 0.2);
+            color: #fcd34d;
+        }
+
+        .severity-medium {
+            background: rgba(59, 130, 246, 0.2);
+            color: #93c5fd;
+        }
+
+        .severity-low {
+            background: rgba(34, 197, 94, 0.2);
+            color: #86efac;
+        }
+
+        .confidence-bar {
+            display: inline-block;
+            width: 100px;
+            height: 8px;
+            background: rgba(100, 116, 139, 0.3);
+            border-radius: 4px;
+            overflow: hidden;
+        }
+
+        .confidence-fill {
+            height: 100%;
+            background: linear-gradient(90deg, #3b82f6 0%, #10b981 100%);
+        }
+
+        .empty-state {
+            text-align: center;
+            padding: 3rem;
+            color: #94a3b8;
+        }
+
+        .footer {
+            text-align: center;
+            padding: 2rem;
+            color: #64748b;
+            font-size: 0.875rem;
+        }
+
+        @media (max-width: 768px) {
+            .container {
+                padding: 1rem;
+            }
+
+            .metrics-grid {
+                grid-template-columns: 1fr;
+            }
+
+            .metric-value {
+                font-size: 1.5rem;
+            }
+
+            header h1 {
+                font-size: 1.3rem;
+            }
+        }
+
+        .loading {
+            opacity: 0.6;
+            animation: pulse 2s infinite;
+        }
+
+        @keyframes pulse {
+            0%, 100% {
+                opacity: 0.6;
+            }
+            50% {
+                opacity: 1;
+            }
+        }
+    </style>
+</head>
+<body>
+    <header>
+        <h1>📊 RCA Dashboard - Root Cause Analysis</h1>
+    </header>
+
+    <div class="container">
+        <!-- Metrics Overview -->
+        <div id="metrics-section" class="metrics-grid loading">
+            <div class="metric-card">
+                <div class="metric-label">Request Count (1min)</div>
+                <div class="metric-value" id="metric-requests">-</div>
+                <div class="metric-change trend-down">↓ 2.5% from baseline</div>
+            </div>
+
+            <div class="metric-card">
+                <div class="metric-label">Error Rate (1min)</div>
+                <div class="metric-value" id="metric-error-rate">-</div>
+                <div class="metric-change trend-up">↑ 0.3% spike</div>
+            </div>
+
+            <div class="metric-card">
+                <div class="metric-label">p99 Latency (ms)</div>
+                <div class="metric-value" id="metric-p99">-</div>
+                <div class="metric-change trend-down">↓ Within normal range</div>
+            </div>
+
+            <div class="metric-card">
+                <div class="metric-label">System Health</div>
+                <div class="metric-value" id="metric-health">-</div>
+                <div class="metric-change trend-down">← Stable</div>
+            </div>
+        </div>
+
+        <!-- Component Status -->
+        <section class="chart-section">
+            <div class="section-title">Component Health Status</div>
+            <div id="status-section" class="status-grid loading">
+                <div class="status-item">
+                    <div class="status-indicator status-healthy">✓</div>
+                    <div class="status-info">
+                        <div class="status-title">Nginx</div>
+                        <div class="status-detail">99.5% availability</div>
+                    </div>
+                </div>
+
+                <div class="status-item">
+                    <div class="status-indicator status-healthy">✓</div>
+                    <div class="status-info">
+                        <div class="status-title">Gunicorn</div>
+                        <div class="status-detail">All workers healthy</div>
+                    </div>
+                </div>
+
+                <div class="status-item">
+                    <div class="status-indicator status-healthy">✓</div>
+                    <div class="status-info">
+                        <div class="status-title">Uvicorn</div>
+                        <div class="status-detail">p99 latency: 245ms</div>
+                    </div>
+                </div>
+
+                <div class="status-item">
+                    <div class="status-indicator status-warning">!</div>
+                    <div class="status-info">
+                        <div class="status-title">Application</div>
+                        <div class="status-detail">3 errors in last minute</div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Charts -->
+        <section class="chart-section">
+            <div class="section-title">Error Rate Trend</div>
+            <div class="chart-placeholder" id="chart-error-trend">
+                <svg width="48" height="48" viewBox="0 0 48 48" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M0 36 L12 24 L24 28 L36 12 L48 20"></path>
+                </svg>
+                <p>Error rate trend chart will appear here</p>
+            </div>
+        </section>
+
+        <section class="chart-section">
+            <div class="section-title">Latency Distribution</div>
+            <div class="chart-placeholder" id="chart-latency">
+                <svg width="48" height="48" viewBox="0 0 48 48" fill="none" stroke="currentColor" stroke-width="2">
+                    <rect x="4" y="12" width="4" height="24"></rect>
+                    <rect x="12" y="8" width="4" height="28"></rect>
+                    <rect x="20" y="4" width="4" height="32"></rect>
+                    <rect x="28" y="8" width="4" height="28"></rect>
+                    <rect x="36" y="16" width="4" height="20"></rect>
+                </svg>
+                <p>Latency distribution histogram will appear here</p>
+            </div>
+        </section>
+
+        <!-- Recent Incidents -->
+        <section class="chart-section">
+            <div class="section-title">Recent RCA Incidents (Last 24h)</div>
+            <table class="incidents-table" id="incidents-table">
+                <thead>
+                    <tr>
+                        <th>Incident ID</th>
+                        <th>Type</th>
+                        <th>Severity</th>
+                        <th>Root Cause</th>
+                        <th>Confidence</th>
+                        <th>Timestamp</th>
+                    </tr>
+                </thead>
+                <tbody id="incidents-body">
+                    <tr>
+                        <td colspan="6" class="empty-state">Loading incidents...</td>
+                    </tr>
+                </tbody>
+            </table>
+        </section>
+    </div>
+
+    <footer class="footer">
+        <p>RCA Dashboard v1.0 | Real-time observability for production systems</p>
+    </footer>
+
+    <script>
+        // Load metrics snapshot
+        async function loadMetricsSnapshot() {
+            try {
+                const response = await fetch('/api/dashboard/metrics-snapshot');
+                const data = await response.json();
+
+                document.getElementById('metric-requests').textContent = data.request_count.toLocaleString();
+                document.getElementById('metric-error-rate').textContent = (data.error_rate * 100).toFixed(2) + '%';
+                document.getElementById('metric-p99').textContent = data.p99_latency.toFixed(0);
+                document.getElementById('metric-health').textContent = (
+                    (100 - data.error_rate * 100 - data.cpu_percent / 2) / 100 * 100
+                ).toFixed(0) + '%';
+
+                document.getElementById('metrics-section').classList.remove('loading');
+            } catch (error) {
+                console.error('Failed to load metrics:', error);
+            }
+        }
+
+        // Load component health status
+        async function loadComponentHealth() {
+            try {
+                const response = await fetch('/api/dashboard/component-health');
+                const data = await response.json();
+
+                const statusGrid = document.getElementById('status-section');
+                statusGrid.innerHTML = '';
+
+                for (const [component, health] of Object.entries(data)) {
+                    const statusClass = `status-${health.status}`;
+                    const indicator = health.status === 'healthy' ? '✓' : 
+                                    health.status === 'critical' ? '✕' : '!';
+
+                    const html = `
+                        <div class="status-item">
+                            <div class="status-indicator ${statusClass}">${indicator}</div>
+                            <div class="status-info">
+                                <div class="status-title">${component.charAt(0).toUpperCase() + component.slice(1)}</div>
+                                <div class="status-detail">
+                                    Error rate: ${(health.error_rate * 100).toFixed(2)}% | p99: ${health.p99_latency.toFixed(0)}ms
+                                </div>
+                            </div>
+                        </div>
+                    `;
+                    statusGrid.innerHTML += html;
+                }
+
+                statusGrid.classList.remove('loading');
+            } catch (error) {
+                console.error('Failed to load component health:', error);
+            }
+        }
+
+        // Load recent incidents
+        async function loadRecentIncidents() {
+            try {
+                const response = await fetch('/api/dashboard/recent-incidents?limit=10');
+                const data = await response.json();
+
+                const tbody = document.getElementById('incidents-body');
+                tbody.innerHTML = '';
+
+                if (data.incidents.length === 0) {
+                    tbody.innerHTML = '<tr><td colspan="6" class="empty-state">No recent incidents</td></tr>';
+                    return;
+                }
+
+                data.incidents.forEach(incident => {
+                    const severityClass = `severity-${incident.severity}`;
+                    const confidencePercent = (incident.confidence_score * 100).toFixed(0);
+                    const fillWidth = incident.confidence_score * 100;
+
+                    const html = `
+                        <tr>
+                            <td><code style="color: #94a3b8">${incident.incident_id.substring(0, 8)}...</code></td>
+                            <td>${incident.incident_type.replace(/_/g, ' ')}</td>
+                            <td><span class="severity-badge ${severityClass}">${incident.severity}</span></td>
+                            <td>${incident.root_cause.substring(0, 50)}...</td>
+                            <td>
+                                <div class="confidence-bar">
+                                    <div class="confidence-fill" style="width: ${fillWidth}%"></div>
+                                </div>
+                                <span style="font-size: 0.75rem; color: #94a3b8">${confidencePercent}%</span>
+                            </td>
+                            <td><span style="color: #94a3b8">${new Date(incident.timestamp).toLocaleString()}</span></td>
+                        </tr>
+                    `;
+                    tbody.innerHTML += html;
+                });
+            } catch (error) {
+                console.error('Failed to load incidents:', error);
+            }
+        }
+
+        // Initialize dashboard
+        function initializeDashboard() {
+            loadMetricsSnapshot();
+            loadComponentHealth();
+            loadRecentIncidents();
+
+            // Refresh every 30 seconds
+            setInterval(loadMetricsSnapshot, 30000);
+            setInterval(loadComponentHealth, 30000);
+            setInterval(loadRecentIncidents, 30000);
+        }
+
+        // Load when DOM is ready
+        if (document.readyState === 'loading') {
+            document.addEventListener('DOMContentLoaded', initializeDashboard);
+        } else {
+            initializeDashboard();
+        }
+    </script>
+</body>
+</html>

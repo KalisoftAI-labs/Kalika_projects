@@ -1,0 +1,40 @@
+# robots.txt - Google Bot, Bing Bot, and search engine crawlers configuration
+
+User-agent: *
+Disallow: /admin/
+Disallow: /api/
+Disallow: /internal/
+Disallow: /private/
+Disallow: /*.php
+Disallow: /wp-*
+Disallow: /xmlrpc.php
+
+# Allow crawling of public content
+Allow: /
+Allow: /product/
+Allow: /category/
+Allow: /cart/
+Allow: /search/
+
+# Specific bots
+User-agent: googlebot
+Crawl-delay: 1
+
+User-agent: bingbot
+Crawl-delay: 1
+
+User-agent: ahrefs
+Crawl-delay: 5
+
+User-agent: petalbot
+Crawl-delay: 5
+
+# Block bad bots
+User-agent: MJ12bot
+Disallow: /
+
+User-agent: AhrefsBot
+Crawl-delay: 10
+
+# Sitemaps
+Sitemap: http://localhost:8000/sitemap.xml

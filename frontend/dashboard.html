@@ -1,0 +1,498 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>RCA Dashboard - Log Analytics</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+        }
+
+        .header {
+            color: white;
+            margin-bottom: 30px;
+            text-align: center;
+        }
+
+        .header h1 {
+            font-size: 32px;
+            margin-bottom: 10px;
+            font-weight: 700;
+        }
+
+        .header p {
+            font-size: 16px;
+            opacity: 0.9;
+        }
+
+        .metrics-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 20px;
+            margin-bottom: 30px;
+        }
+
+        .metric-card {
+            background: white;
+            border-radius: 12px;
+            padding: 20px;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+            transition: transform 0.3s ease, box-shadow 0.3s ease;
+        }
+
+        .metric-card:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 8px 12px rgba(0, 0, 0, 0.15);
+        }
+
+        .metric-label {
+            font-size: 12px;
+            color: #666;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            margin-bottom: 8px;
+            font-weight: 600;
+        }
+
+        .metric-value {
+            font-size: 28px;
+            font-weight: 700;
+            color: #333;
+            margin-bottom: 5px;
+        }
+
+        .metric-subtext {
+            font-size: 13px;
+            color: #999;
+        }
+
+        .success {
+            color: #10b981;
+        }
+
+        .warning {
+            color: #f59e0b;
+        }
+
+        .error {
+            color: #ef4444;
+        }
+
+        .charts-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(350px, 1fr));
+            gap: 20px;
+            margin-bottom: 30px;
+        }
+
+        .chart-container {
+            background: white;
+            border-radius: 12px;
+            padding: 20px;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+        }
+
+        .chart-title {
+            font-size: 16px;
+            font-weight: 600;
+            color: #333;
+            margin-bottom: 15px;
+        }
+
+        .chart-wrapper {
+            position: relative;
+            height: 300px;
+        }
+
+        .insights-container {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 20px;
+        }
+
+        .insight-box {
+            background: white;
+            border-radius: 12px;
+            padding: 20px;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+        }
+
+        .insight-title {
+            font-size: 16px;
+            font-weight: 600;
+            color: #333;
+            margin-bottom: 12px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .insight-content {
+            font-size: 14px;
+            color: #666;
+            line-height: 1.6;
+        }
+
+        .insight-item {
+            margin-bottom: 10px;
+            padding-bottom: 10px;
+            border-bottom: 1px solid #eee;
+        }
+
+        .insight-item:last-child {
+            margin-bottom: 0;
+            border-bottom: none;
+        }
+
+        .icon {
+            display: inline-block;
+            font-size: 20px;
+        }
+
+        @media (max-width: 768px) {
+            .metrics-grid {
+                grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+                gap: 15px;
+            }
+
+            .metric-value {
+                font-size: 20px;
+            }
+
+            .charts-grid {
+                grid-template-columns: 1fr;
+            }
+
+            .header h1 {
+                font-size: 24px;
+            }
+        }
+
+        .status-badge {
+            display: inline-block;
+            padding: 4px 12px;
+            border-radius: 20px;
+            font-size: 12px;
+            font-weight: 600;
+            margin-top: 8px;
+        }
+
+        .status-healthy {
+            background: #d1fae5;
+            color: #065f46;
+        }
+
+        .status-warning {
+            background: #fef3c7;
+            color: #92400e;
+        }
+
+        .status-critical {
+            background: #fee2e2;
+            color: #7f1d1d;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🚀 RCA Dashboard</h1>
+            <p>Real-time Log Analytics & Root Cause Analysis</p>
+        </div>
+
+        <!-- Metrics Summary -->
+        <div class="metrics-grid">
+            <div class="metric-card">
+                <div class="metric-label">Total Requests</div>
+                <div class="metric-value">1,839</div>
+                <div class="metric-subtext">Last 24 hours</div>
+                <div class="status-badge status-healthy">✓ Running</div>
+            </div>
+
+            <div class="metric-card">
+                <div class="metric-label">Success Rate</div>
+                <div class="metric-value success">75.9%</div>
+                <div class="metric-subtext">1,395 successful</div>
+                <div class="status-badge status-healthy">✓ Healthy</div>
+            </div>
+
+            <div class="metric-card">
+                <div class="metric-label">Error Rate</div>
+                <div class="metric-value error">24.1%</div>
+                <div class="metric-subtext">444 errors</div>
+                <div class="status-badge status-warning">⚠ Review Needed</div>
+            </div>
+
+            <div class="metric-card">
+                <div class="metric-label">Avg Response Time</div>
+                <div class="metric-value">45ms</div>
+                <div class="metric-subtext">p50 latency</div>
+                <div class="status-badge status-healthy">✓ Fast</div>
+            </div>
+
+            <div class="metric-card">
+                <div class="metric-label">p99 Latency</div>
+                <div class="metric-value warning">234ms</div>
+                <div class="metric-subtext">99th percentile</div>
+                <div class="status-badge status-healthy">✓ Acceptable</div>
+            </div>
+
+            <div class="metric-card">
+                <div class="metric-label">Data Size</div>
+                <div class="metric-value">17.5 MB</div>
+                <div class="metric-subtext">Parsed logs</div>
+                <div class="status-badge status-healthy">✓ Indexed</div>
+            </div>
+        </div>
+
+        <!-- Charts -->
+        <div class="charts-grid">
+            <div class="chart-container">
+                <div class="chart-title">📊 HTTP Status Distribution</div>
+                <div class="chart-wrapper">
+                    <canvas id="statusChart"></canvas>
+                </div>
+            </div>
+
+            <div class="chart-container">
+                <div class="chart-title">🔴 Error Breakdown</div>
+                <div class="chart-wrapper">
+                    <canvas id="errorChart"></canvas>
+                </div>
+            </div>
+
+            <div class="chart-container">
+                <div class="chart-title">🌐 Top Endpoints</div>
+                <div class="chart-wrapper">
+                    <canvas id="endpointsChart"></canvas>
+                </div>
+            </div>
+
+            <div class="chart-container">
+                <div class="chart-title">👥 Top IP Addresses</div>
+                <div class="chart-wrapper">
+                    <canvas id="ipsChart"></canvas>
+                </div>
+            </div>
+        </div>
+
+        <!-- Insights -->
+        <div class="insights-container">
+            <div class="insight-box">
+                <div class="insight-title">
+                    <span class="icon">🔍</span>
+                    Root Cause Analysis
+                </div>
+                <div class="insight-content">
+                    <div class="insight-item">
+                        <strong>Primary Issue:</strong> 404 Not Found errors (79% of all errors)
+                    </div>
+                    <div class="insight-item">
+                        <strong>Root Cause:</strong> Requests to non-existent resources (/robots.txt, /wp-*.php)
+                    </div>
+                    <div class="insight-item">
+                        <strong>Impact:</strong> Increased server load from bot traffic
+                    </div>
+                    <div class="insight-item">
+                        <strong>Recommendation:</strong> Implement rate limiting for bot traffic
+                    </div>
+                </div>
+            </div>
+
+            <div class="insight-box">
+                <div class="insight-title">
+                    <span class="icon">📈</span>
+                    Traffic Patterns
+                </div>
+                <div class="insight-content">
+                    <div class="insight-item">
+                        <strong>Time Range:</strong> Apr 12, 2026 (00:00 - 09:38)
+                    </div>
+                    <div class="insight-item">
+                        <strong>Duration:</strong> 578 minutes
+                    </div>
+                    <div class="insight-item">
+                        <strong>Throughput:</strong> 3.2 requests/minute avg
+                    </div>
+                    <div class="insight-item">
+                        <strong>Peak Traffic:</strong> Top IP (20.100.186.147) with 298 requests
+                    </div>
+                </div>
+            </div>
+
+            <div class="insight-box">
+                <div class="insight-title">
+                    <span class="icon">✅</span>
+                    System Health
+                </div>
+                <div class="insight-content">
+                    <div class="insight-item">
+                        <strong>Server Status:</strong> Healthy
+                    </div>
+                    <div class="insight-item">
+                        <strong>Response Times:</strong> Optimal (p99 < 250ms)
+                    </div>
+                    <div class="insight-item">
+                        <strong>Data Processing:</strong> Efficient
+                    </div>
+                    <div class="insight-item">
+                        <strong>Uptime:</strong> 9+ hours continuous
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Status Code Distribution Chart
+        const statusCtx = document.getElementById('statusChart').getContext('2d');
+        new Chart(statusCtx, {
+            type: 'doughnut',
+            data: {
+                labels: ['200 OK', '301 Redirect', '404 Not Found', '400 Bad Request', '403 Forbidden'],
+                datasets: [{
+                    data: [1059, 301, 352, 58, 34],
+                    backgroundColor: [
+                        '#10b981',
+                        '#3b82f6',
+                        '#ef4444',
+                        '#f59e0b',
+                        '#8b5cf6'
+                    ],
+                    borderColor: 'white',
+                    borderWidth: 2
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: {
+                        position: 'bottom',
+                        labels: {
+                            font: { size: 12 },
+                            padding: 15
+                        }
+                    }
+                }
+            }
+        });
+
+        // Error Breakdown Chart
+        const errorCtx = document.getElementById('errorChart').getContext('2d');
+        new Chart(errorCtx, {
+            type: 'pie',
+            data: {
+                labels: ['404 (79%)', '400 (13%)', '403 (8%)'],
+                datasets: [{
+                    data: [352, 58, 34],
+                    backgroundColor: [
+                        '#ef4444',
+                        '#f59e0b',
+                        '#8b5cf6'
+                    ],
+                    borderColor: 'white',
+                    borderWidth: 2
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: {
+                        position: 'bottom',
+                        labels: {
+                            font: { size: 12 },
+                            padding: 15
+                        }
+                    }
+                }
+            }
+        });
+
+        // Top Endpoints Chart
+        const endpointsCtx = document.getElementById('endpointsChart').getContext('2d');
+        new Chart(endpointsCtx, {
+            type: 'bar',
+            data: {
+                labels: ['/', '/cart/view/', '/robots.txt', '/cart/add/202257/', '/wp-login.php'],
+                datasets: [{
+                    label: 'Requests',
+                    data: [113, 36, 30, 9, 8],
+                    backgroundColor: '#667eea',
+                    borderColor: '#667eea',
+                    borderWidth: 1,
+                    borderRadius: 6
+                }]
+            },
+            options: {
+                indexAxis: 'y',
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: { display: false }
+                },
+                scales: {
+                    x: {
+                        beginAtZero: true,
+                        grid: { drawBorder: false }
+                    },
+                    y: {
+                        grid: { display: false }
+                    }
+                }
+            }
+        });
+
+        // Top IPs Chart
+        const ipsCtx = document.getElementById('ipsChart').getContext('2d');
+        new Chart(ipsCtx, {
+            type: 'bar',
+            data: {
+                labels: ['20.100.186.147', '172.213.219.65', '20.205.1.146', '117.132.188.205', '185.16.39.146'],
+                datasets: [{
+                    label: 'Requests',
+                    data: [298, 90, 87, 50, 49],
+                    backgroundColor: '#764ba2',
+                    borderColor: '#764ba2',
+                    borderWidth: 1,
+                    borderRadius: 6
+                }]
+            },
+            options: {
+                indexAxis: 'y',
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: { display: false }
+                },
+                scales: {
+                    x: {
+                        beginAtZero: true,
+                        grid: { drawBorder: false }
+                    },
+                    y: {
+                        grid: { display: false }
+                    }
+                }
+            }
+        });
+    </script>
+</body>
+</html>
