@@ -19,7 +19,8 @@ from fastapi_app.app import app as fastapi_app
 # Create the main application with proper routing
 application = Starlette(
     routes=[
-        Mount('/admin', app=fastapi_app),  # FastAPI admin at /admin
+        Mount('/fastapi-admin', app=fastapi_app),
+        # Mount('/admin', app=fastapi_app),  # FastAPI admin at /admin
         Mount('/static', app=StaticFiles(directory=str(settings.STATIC_ROOT)), name='static'),  # Static files
         Mount('/', app=django_app),        # Django at root (must be last)
     ],

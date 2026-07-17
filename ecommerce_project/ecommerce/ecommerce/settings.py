@@ -2,15 +2,17 @@ import os
 from pathlib import Path
 from dotenv import load_dotenv
 from django.core.exceptions import ImproperlyConfigured
-# Load environment variables from .env file
+
 load_dotenv()
 
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
-
 if not GEMINI_API_KEY:
     raise ImproperlyConfigured("GEMINI_API_KEY not found in environment variables.")
 
 BASE_DIR = Path(__file__).resolve().parent.parent
+
+LOGS_DIR = BASE_DIR / "logs"
+LOGS_DIR.mkdir(exist_ok=True)
 
 SECRET_KEY = os.getenv('SECRET_KEY')
 if not SECRET_KEY:
@@ -18,16 +20,15 @@ if not SECRET_KEY:
 if len(SECRET_KEY) < 50:
     raise ImproperlyConfigured("SECRET_KEY must be at least 50 characters long")
 
-DEBUG = os.getenv('DEBUG', 'False').lower() in ('true', '1', 'yes')
+DEBUG = True
 
-#ALLOWED_HOSTS = ['localhost', '127.0.0.1']
 ALLOWED_HOSTS = [
-    'www.kalikaindia.com', 
-    'kalikaindia.com', 
-    'localhost', 
+    'www.kalikaindia.com',
+    'kalikaindia.com',
+    'localhost',
     '127.0.0.1',
-    '34.226.85.194',  # EC2 public IP
-    '172.31.17.182'   # EC2 private IP
+    '34.226.85.194',
+    '172.31.17.182'
 ]
 
 INSTALLED_APPS = [
@@ -45,13 +46,13 @@ INSTALLED_APPS = [
     'chatbot',
     'punchout',
     'fastapi_app',
-    
+    # 'sslserver',  # only needed if you want HTTPS in dev
 ]
 
 MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',
-    'ecommerce.middleware.security_middleware.SecurityMiddleware',  # Custom IP blocking
-    'ecommerce.middleware.security_middleware.RateLimitMiddleware',  # Rate limiting
+    'ecommerce.middleware.security_middleware.SecurityMiddleware',
+    'ecommerce.middleware.security_middleware.RateLimitMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
     'django.middleware.common.CommonMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',
@@ -126,59 +127,42 @@ AWS_S3_BUCKET_NAME = 'kalika-ecom'
 SESSION_ENGINE = 'django.contrib.sessions.backends.db'
 SESSION_COOKIE_SAMESITE = 'Lax'
 SESSION_COOKIE_HTTPONLY = True
-SESSION_COOKIE_AGE = 86400  # 24 hours
+SESSION_COOKIE_AGE = 86400
 
-# Caching Configuration
-# Using local-memory caching (for single-server setup)
-# For production with multiple servers, use Redis or Memcached
 CACHES = {
     'default': {
         'BACKEND': 'django.core.cache.backends.locmem.LocMemCache',
         'LOCATION': 'unique-snowflake',
-        'OPTIONS': {
-            'MAX_ENTRIES': 5000,  # Store up to 5000 cached items
-        }
+        'OPTIONS': {'MAX_ENTRIES': 5000}
     },
     'product_images': {
         'BACKEND': 'django.core.cache.backends.locmem.LocMemCache',
         'LOCATION': 'product-image-cache',
-        'TIMEOUT': 3600,  # Cache S3 URLs for 1 hour
-        'OPTIONS': {
-            'MAX_ENTRIES': 10000,
-        }
+        'TIMEOUT': 3600,
+        'OPTIONS': {'MAX_ENTRIES': 10000}
     }
 }
 
 PUNCHOUT_SUPPLIER_DUNS = os.getenv('PUNCHOUT_SUPPLIER_DUNS')
 PUNCHOUT_ANID = os.getenv('PUNCHOUT_ANID')
-PUNCHOUT_SHARED_SECRET = os.getenv('PUNCHOUT_SHARED_SECRET')
-if not PUNCHOUT_SHARED_SECRET:
-    raise ImproperlyConfigured("PUNCHOUT_SHARED_SECRET must be set in environment variables")
 PUNCHOUT_RETURN_URL = "https://ariba-network-endpoint.com/poom"
-# Ariba PunchOut Settings
 ARIBA_NETWORK_ID = os.getenv('ARIBA_NETWORK_ID')
 ARIBA_ENDPOINT = 'https://test.ariba.com/punchout/cxml/setup'
 
-# --- Security Settings ---
-# For production deployment, these MUST be enabled
-SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
-USE_X_FORWARDED_HOST = True
-USE_X_FORWARDED_PORT = True
-
-# Set to True for production with HTTPS
-SECURE_SSL_REDIRECT = True  # Enable in production
-SESSION_COOKIE_SECURE = True  # Cookies only over HTTPS
-CSRF_COOKIE_SECURE = True     # CSRF cookies only over HTTPS
-#SESSION_COOKIE_SECURE = False  # Set to True in production with HTTPS
-#CSRF_COOKIE_SECURE = False     # Set to True in production with HTTPS
-
-# Additional security headers
-SECURE_BROWSER_XSS_FILTER = True
-SECURE_CONTENT_TYPE_NOSNIFF = True
-X_FRAME_OPTIONS = 'DENY'
-SECURE_HSTS_SECONDS = 31536000  # 1 year
-SECURE_HSTS_INCLUDE_SUBDOMAINS = True
-SECURE_HSTS_PRELOAD = True
+# --- Security Settings (DEV) ---
+# ⚠️ Do NOT enable SSL/HSTS in dev — use production settings file for that
+SECURE_PROXY_SSL_HEADER = None          # No proxy in dev
+USE_X_FORWARDED_HOST = False
+USE_X_FORWARDED_PORT = False
+SECURE_SSL_REDIRECT = False             # HTTP is fine in dev
+SESSION_COOKIE_SECURE = False           # Allows cookies over HTTP
+CSRF_COOKIE_SECURE = False              # Allows CSRF over HTTP
+SECURE_BROWSER_XSS_FILTER = True        # Safe in dev
+SECURE_CONTENT_TYPE_NOSNIFF = True      # Safe in dev
+X_FRAME_OPTIONS = 'DENY'               # Safe in dev
+SECURE_HSTS_SECONDS = 0                 # ⚠️ NEVER set this in dev
+SECURE_HSTS_INCLUDE_SUBDOMAINS = False
+SECURE_HSTS_PRELOAD = False
 
 # Logging Configuration
 LOGGING = {
@@ -199,7 +183,7 @@ LOGGING = {
             'level': 'WARNING',
             'class': 'logging.handlers.RotatingFileHandler',
             'filename': BASE_DIR / 'logs' / 'security.log',
-            'maxBytes': 1024 * 1024 * 10,  # 10 MB
+            'maxBytes': 1024 * 1024 * 10,
             'backupCount': 5,
             'formatter': 'verbose',
         },

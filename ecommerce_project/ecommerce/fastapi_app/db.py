@@ -9,6 +9,9 @@ import os
 logger = logging.getLogger(__name__)
 pwd_context = CryptContext(schemes=["pbkdf2_sha256"], deprecated="auto")
 
+from dotenv import load_dotenv
+load_dotenv()
+
 # Database connection parameters from environment variables
 db_host = os.getenv('DB_HOST', 'localhost')
 db_name = os.getenv('DB_NAME')

@@ -1,0 +1,38 @@
+# Virtual environment
+venv/
+
+# Python cache
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+*.pyc
+
+# Environment files
+.env
+.env.local
+.env.staging
+.env.production
+.env.bak
+
+# Security logs
+logs/
+*.log
+
+# IDE
+.vscode/
+.idea/
+
+# Data files
+*.csv
+*.xlsx
+id_rsa
+id_rsa.pub
+
+# Database
+*.sqlite3
+db.sqlite3
+
+# Static/media files
+staticfiles/
+mediafiles/
