@@ -86,7 +86,7 @@ def punchout_setup(request):
             # Try reading from request body directly
             cxml_payload = request.body.decode('utf-8')
             logger.info("cxml-urlencoded not found in POST, using request.body")
-        
+
         logger.info(f"--- START INCOMING CXML PAYLOAD ---\n{cxml_payload}\n--- END INCOMING CXML PAYLOAD ---")
 
         if not cxml_payload:
@@ -100,7 +100,7 @@ def punchout_setup(request):
         # --- Credential Verification ---
         # ▼▼▼ [CHANGE 3] REMOVED the 'cxml:' prefixes from all XPath strings below ▼▼▼
         shared_secret = _get_cxml_text(root, ".//Credential/SharedSecret")
-        
+
         if shared_secret:
             if shared_secret != settings.PUNCHOUT_SHARED_SECRET:
                 logger.warning("PunchOut setup failed: Invalid SharedSecret provided.")
@@ -114,7 +114,7 @@ def punchout_setup(request):
         if not all([from_identity, browser_post_url, buyer_cookie]):
             logger.error(f"PunchOut setup failed: Missing required cXML fields. Found Identity: {from_identity}, URL: {browser_post_url}, BuyerCookie: {buyer_cookie}")
             return render(request, 'punchout/punchout_error.html', {'error': 'Incomplete cXML data.'})
-
+        
         # --- User Management ---
         try:
             user, created = CustomUser.objects.get_or_create(
