@@ -1,10 +1,15 @@
-Of course. Here is a revised and more clearly structured version of the documentation for setting up and deploying the E-commerce PunchOut Catalog project.
+
 
 -----
-
 # 🛒 E-commerce PunchOut Catalog (Django)
 
 This project is a Django-based PunchOut Catalog system designed for B2B e-procurement. It enables suppliers to receive and process PunchOut orders from enterprise procurement systems using cXML. The system is built with a PostgreSQL backend, making it a robust solution for production environments.
+
+<p align="center">
+  <img src="architecture.gif" alt="Architecture Diagram">
+</p>
+
+
 
 -----
 

@@ -13,7 +13,6 @@ understand the core functionality of the punchout process
 dev estimate 
 1. time required for end to end pipeline with breakdown of branches along with the visually appealing roadmap and flow diagrams
 
-
 final deployment cycle
 1st iteration : 1 week
 2nd iteration : 1 1/2 week 
