@@ -15,12 +15,13 @@
 | 5 | Cart API | **DONE** | 29-Jul |
 | 6 | Homepage rotation + featured + video | **DONE** | 29-Jul |
 | 7 | Cart checkout + cXML + order audit | **DONE** | 29-Jul |
-| 8 | Admin product CRUD | ❌ | — |
-| 9 | Admin orders + dashboard + users | ❌ | — |
+| 8 | PunchOut cXML setup + session | **DONE** | 30-Jul |
+| 9 | Admin product CRUD + bulk CSV + DataTables + export | **DONE** | 30-Jul |
+| 10 | Admin orders + dashboard + users | **DONE** | 30-Jul |
 | 10 | Chatbot | ❌ | — |
-| 11 | Frontend template integration | ❌ | — |
-| 12 | Security audit + hardening | ❌ | — |
-| 13 | Old DB data migration | ❌ | — |
+| 11 | Security middleware (IP block, path block, rate limit) | **DONE** | 30-Jul |
+| 12 | Chatbot (Gemini) | ❌ | — |
+| 13 | Templates + security audit + migration | ❌ | — |
 
 ---
 
@@ -219,7 +220,39 @@ DELETE /api/cart/items/{id}        → remove
 pytest tests/test_cart.py -v
 # → 6 passed (add/get/update/remove/empty/authenticated)
 pytest tests/ -v
-# → 25 passed
+# → 64 passed
+```
+
+---
+
+### Step 11 — Security Middleware (30-Jul)
+
+**Created:**
+| File | Purpose |
+|------|---------|
+| `app/middleware/security.py` | SecurityMiddleware + RateLimitMiddleware (exact port from old `security_middleware.py`) |
+| `tests/test_security.py` | 7 tests |
+
+**Two middleware classes:**
+
+**`SecurityMiddleware`** — blocks on every request:
+- **12 known malicious IPs** blocked immediately (same list as old site)
+- **14 suspicious path patterns** blocked: `.env`, `.git`, `phpinfo.php`, `config.php`, `adminer.php`, `.ini`, `.bak`, `login.asp`, etc.
+- **Auto-block:** 3+ suspicious attempts from same IP within 5 min → runtime block
+- **Path traversal:** `//` and `..` blocked (at middleware level)
+- IP detected via `X-Forwarded-For` header or `REMOTE_ADDR` fallback
+
+**`RateLimitMiddleware`** — limits on sensitive paths:
+- **20 requests/minute** on `/api/auth/`, `/api/admin/`, `/api/punchout/`
+- Returns 429 when exceeded
+- Per-IP per-path tracking with 60s sliding window
+
+**Verify:**
+```bash
+pytest tests/test_security.py -v
+# → 7 passed
+pytest tests/ -v
+# → 64 passed
 ```
 
 **Known gaps vs old site (see 05-migration-gap-analysis.md):**
@@ -271,7 +304,106 @@ curl http://localhost:8004/api/catalog/home
 
 ---
 
-### Step 7 — Cart Checkout + cXML + Order Audit (29-Jul)
+### Step 8 — PunchOut cXML Setup + Session (30-Jul)
+
+**Created:**
+| File | Purpose |
+|------|---------|
+| `app/models/punchout_session.py` | PunchOutSession model (replaces Django session storage with own table) |
+| `app/services/punchout_service.py` | cXML parsing, SharedSecret verification, user get-or-create, edit mode cart population, setup response generation |
+| `app/routers/punchout.py` | 2 endpoints (setup POST + session GET) |
+| `tests/test_punchout.py` | 8 tests (parse, validate, setup response, edit mode) |
+
+**Endpoints:**
+```
+POST /api/punchout/setup       → receives cXML → returns PunchOutSetupResponse XML or edit mode JSON
+GET  /api/punchout/session/{id} → punchout session details
+```
+
+**Two modes:**
+- **Setup mode:** Parses cXML, verifies SharedSecret, creates/get user by buyer_identifier, stores session in `punchout_sessions` table (24hr TTL), returns `PunchOutSetupResponse` cXML with StartPage URL
+- **Edit mode:** If `<ItemOut>` elements exist, populates cart with matched products, returns JSON with session_id + return_url + buyer_cookie
+
+**Session storage replaces Django sessions** — punchout metadata (return_url, buyer_cookie, from_identity) stored in `punchout_sessions` table keyed by UUID session_id.
+
+**Verify:**
+```bash
+pytest tests/test_punchout.py -v
+# → 8 passed (parse, generate, setup success, edit mode, invalid cXML, wrong secret)
+pytest tests/ -v
+# → 38 passed
+```
+
+---
+
+### Step 9 — Admin Product CRUD + Bulk CSV + DataTables + Export (30-Jul)
+
+**Created:**
+| File | Purpose |
+|------|---------|
+| `app/services/admin_product_service.py` | CRUD, DataTables query, bulk CSV import (4 modes), datatables |
+| `app/services/export_service.py` | CSV export with column selection |
+| `app/routers/admin_products.py` | 9 endpoints (all admin-protected via `require_role("Admin")`) |
+| `tests/test_admin_products.py` | 11 tests |
+
+**Endpoints:**
+```
+GET    /api/admin/products                    → paginated list
+GET    /api/admin/products/{id}               → single product
+POST   /api/admin/products                    → create product
+PUT    /api/admin/products/{id}               → update product
+DELETE /api/admin/products/{id}               → delete product
+POST   /api/admin/products/bulk               → CSV bulk import (add/update_price/update_description/delete)
+GET    /api/admin/products/datatables          → DataTables server-side (draw, start, length, search, order)
+GET    /api/admin/products/export/csv          → CSV export with column options
+```
+
+**Bulk CSV modes:** `add` (required: main_category, item_code, product_title, price), `update_price` (item_id + price), `update_description` (item_id + description), `delete` (item_id). Encoding: utf-8-sig first, latin-1 fallback.
+
+**DataTables:** Returns `{draw, recordsTotal, recordsFiltered, data}` with search across title/code/status/category, sortable by id/title/code/status/last_modified.
+
+**Export:** Column sets for "Export Item Information", "Export Item Price", "Export Item Properties" matching old `simulate_export()`.
+
+**Security:** All endpoints protected by `require_role("Admin")` — returns 401 if not authenticated, 403 if not admin.
+
+**Verify:**
+```bash
+pytest tests/test_admin_products.py -v
+# → 11 passed
+pytest tests/ -v
+# → 49 passed
+```
+
+---
+
+### Step 10 — Admin Dashboard + Orders + Users (30-Jul)
+
+**Created:**
+| File | Purpose |
+|------|---------|
+| `app/routers/admin_dashboard.py` | Dashboard stats endpoint (sales, products, users, orders, categories) |
+| `app/routers/admin_orders.py` | Order listing (all/pending/completed from punchout_orders) |
+| `app/routers/admin_users.py` | User management (list/create/update) |
+| `tests/test_admin_rest.py` | 8 tests |
+
+**Endpoints:**
+```
+GET  /api/admin/dashboard          → {total_sales, total_products, total_users, total_orders, recent_orders, category_data}
+GET  /api/admin/orders             → all punchout orders with items
+GET  /api/admin/orders/pending     → pending orders
+GET  /api/admin/orders/completed   → completed + shipped orders
+GET  /api/admin/users              → list all users
+POST /api/admin/users              → create user (username, email, password, role)
+PUT  /api/admin/users/{id}         → update user (username, email, role, is_active, password)
+```
+
+**Security:** All endpoints protected by `require_role("Admin")`.
+
+**Verify:**
+```bash
+pytest tests/ -v
+# → 64 passed
+```
 
 **Created:**
 | File | Purpose |

@@ -1,6 +1,6 @@
 import uuid
 import logging
-from datetime import datetime, timezone
+from datetime import datetime
 from decimal import Decimal
 from lxml import etree
 import httpx
@@ -115,8 +115,8 @@ async def checkout(
 
 def _build_punchout_order_message(cart_items: list, buyer_cookie: str) -> str:
     total_cost = sum(ci.quantity * ci.product.price for ci in cart_items)
-    now = datetime.now(timezone.utc)
-    timestamp = now.isoformat()
+    now = datetime.utcnow()
+    timestamp = now.isoformat() + "Z"
     payload_id = f"{int(now.timestamp())}.{uuid.uuid4()}@kalikaindia.com"
 
     root = etree.Element("cXML", payloadID=payload_id, timestamp=timestamp, version="1.2.014")

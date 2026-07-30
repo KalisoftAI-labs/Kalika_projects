@@ -12,6 +12,7 @@ import app.models.product  # noqa: F401
 import app.models.user  # noqa: F401
 import app.models.cart  # noqa: F401
 import app.models.order  # noqa: F401
+import app.models.punchout_session  # noqa: F401
 
 
 async def run():
