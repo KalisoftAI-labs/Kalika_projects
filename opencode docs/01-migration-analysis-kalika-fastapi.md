@@ -14,8 +14,8 @@
 | Admin backend | FastAPI (ASGI via Uvicorn) | Same (consolidated) |
 | Database | PostgreSQL 18 (on EC2) | Cloud SQL (managed) |
 | Images | AWS S3 (presigned URLs) | AWS S3 (keep) |
-| Frontend | Django DTL + Tailwind + Alpine.js | Same HTML / Jinja2 |
-| Admin UI | Jinja2 + DataTables + Chart.js | Same (keep) |
+| Frontend | Django DTL + Tailwind + Alpine.js | React SPA |
+| Admin UI | Jinja2 + DataTables + Chart.js | React SPA |
 | AI | Google Gemini 2.0 Flash | Keep |
 | Protocol | cXML 1.2.014 | Keep |
 | Server | Nginx → Gunicorn + Uvicorn | Uvicorn (container) |
@@ -79,7 +79,7 @@ ASGI entrypoint (`ecommerce/asgi.py`) mounts:
 |----------|-------|-----|---------|--------|
 | Django views/routes | 15 | ~900 | 40% | Medium |
 | Django models | 5 | ~125 | 60% | Low |
-| Django templates | 14 | ~2,100 | 70% | Medium |
+| Django templates | 14 | ~2,100 | 0% (React rewrite) | Medium |
 | Django config/middleware | 6 | ~400 | 80% | Low |
 | FastAPI admin (app.py) | 1 | 2,402 | 70% | High |
 | FastAPI DB helpers | 2 | 1,030 | 80% | Low |

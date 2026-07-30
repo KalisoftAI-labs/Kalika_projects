@@ -21,7 +21,8 @@
 | 10 | Chatbot | ❌ | — |
 | 11 | Security middleware (IP block, path block, rate limit) | **DONE** | 30-Jul |
 | 12 | Chatbot (Gemini) | ❌ | — |
-| 13 | Templates + security audit + migration | ❌ | — |
+| 13 | React frontend(s) consuming API | ❌ | — |
+| 14 | Security audit + production cutover | ❌ | — |
 
 ---
 

@@ -538,27 +538,17 @@ app/routers/chatbot.py                ~40 lines
 
 ---
 
-### STEP 11: Frontend Template Integration
+### STEP 11: React Frontend
 
-**Goal:** Wire old HTML templates to new API.
+**Goal:** Build React SPA(s) consuming the FastAPI backend.
 
-**What happens here:**
-- Django DTL templates reference Django template variables ({{ product.title }}, {% url %}, etc.)
-- These need updating to call FastAPI endpoints
-- **Option A:** Convert all templates to Jinja2 served by FastAPI
-- **Option B:** Keep Django for frontend, point it at FastAPI API
-- **Option C:** Add a light JS layer that fetches from FastAPI API
+All old Django templates (DTL + Jinja2) are replaced with React:
+- **Public catalog:** product browsing, search, category navigation, cart, checkout
+- **Admin panel:** dashboard, product CRUD, bulk CSV upload, orders, users
 
-**Recommendation: Option C (least disruption)**
-- Keep existing Django templates as-is
-- Add small JS snippets that override AJAX calls to point at new `/api/` endpoints
-- Replace server-rendered data sections with API-fetched content
-- This lets you deploy the new backend without touching every template
+The API is already built and returns clean JSON. React consumes `GET/POST/PUT/DELETE /api/*` directly.
 
-**Or Option A (cleaner):**
-- Move templates to FastAPI's Jinja2
-- Convert `{{ }}` variables, `{% url %}` → hardcoded paths or pass in context
-- 14 catalog templates + 24 admin templates = 38 templates to review
+No Jinja2 server-rendered templates. The frontend is a standalone SPA (in a separate folder or subproject).
 
 ---
 
