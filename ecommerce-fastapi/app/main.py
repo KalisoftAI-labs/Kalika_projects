@@ -3,7 +3,7 @@ from contextlib import asynccontextmanager
 
 from app.database import engine, Base
 from app.config import settings
-from app.routers import health, catalog, auth, cart, punchout, admin_products, admin_dashboard, admin_orders, admin_users
+from app.routers import health, catalog, auth, cart, punchout, admin_products, admin_dashboard, admin_orders, admin_users, chatbot
 # Import models so they register with Base.metadata
 import app.models.product  # noqa: F401
 import app.models.user  # noqa: F401
@@ -41,6 +41,7 @@ app.include_router(admin_products.router, prefix="/api")
 app.include_router(admin_dashboard.router, prefix="/api")
 app.include_router(admin_orders.router, prefix="/api")
 app.include_router(admin_users.router, prefix="/api")
+app.include_router(chatbot.router, prefix="/api")
 
 
 @app.get("/")
