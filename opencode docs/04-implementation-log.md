@@ -373,6 +373,14 @@ POST /api/chatbot/clear     → {conversation_id} → {message}
 - No server-rendered templates — API is already JSON
 - Full plan in `06-react-frontend-plan.md`
 
+**Step 13.5 — PunchOut pre-frontend verification (DONE 31-Jul):**
+- `tests/fixtures/cXML.dtd` — official cXML 1.2.014 DTD (from xml.cXML.org, self-contained)
+- `tests/test_dtd.py` — our generated SetupResponse + OrderMessage validate against official DTD
+- `scripts/mock_ariba.py` — mock Ariba receiver (port 9001) that validates received PunchOutOrderMessage
+- `scripts/e2e_punchout.py` — full flow driver: setup → shop → checkout → mock Ariba validation
+- **Result: 24/24 PASS** — protocol proven locally; only real-Ariba network handshake needs deployment
+- Guide: `08-punchout-verification.md`
+
 **Step 14 — Security audit + production cutover:**
 - Full security checklist (JWT coverage, admin gating, rate limiting, secrets)
 - Old DB data migration (products, users, punchout audit)
