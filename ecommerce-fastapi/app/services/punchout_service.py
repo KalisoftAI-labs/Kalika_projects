@@ -27,6 +27,13 @@ async def handle_setup_request(
     if not cxml_payload:
         return {"error": "No cXML payload received", "status": 400}
 
+    # Ariba URL-encodes the cXML in the cxml-urlencoded form field.
+    # If a proxy/framework left it encoded, decode it before parsing.
+    if not cxml_payload.lstrip().startswith("<"):
+        decoded = unquote(cxml_payload)
+        if decoded != cxml_payload and decoded.lstrip().startswith("<"):
+            cxml_payload = decoded
+
     root = _parse_cxml(cxml_payload)
     if root is None:
         return {"error": "Failed to parse cXML", "status": 400}
