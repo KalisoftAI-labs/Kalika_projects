@@ -41,7 +41,7 @@
                     </a>
                     <div class="p-4 flex flex-col flex-grow">
                         <h3 class="text-md font-semibold text-gray-800 flex-grow mb-2">{{ product.product_title }}</h3>
-                        <p class="text-sm text-gray-500">Stock: {{ product.stock }}</p>
+                        <p class="text-sm text-gray-500">Stock: {{ product.inventory }}</p>
                         <div class="flex items-center justify-between mt-3">
                             <span class="text-lg font-bold text-blue-600">₹{{ product.price|floatformat:2 }}</span>
                             <a href="{% url 'cart:add_to_cart' product.item_id %}" class="p-2 bg-blue-100 text-blue-600 rounded-full hover:bg-blue-200 transition-colors duration-300" aria-label="Add to cart">
@@ -61,4 +61,4 @@
         {% endif %}
     </div>
 </div>
-{% endblock %}
+{% endblock %}
