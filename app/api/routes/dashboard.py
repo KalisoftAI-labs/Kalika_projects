@@ -2,21 +2,62 @@
 
 from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Dict
+from sqlalchemy import desc
 
 from app.storage.database import get_db
+from app.models.orm import LogEntry
 from app.models.schemas import MetricsSnapshot
 from app.processors.metrics import MetricsProcessor
 
 router = APIRouter()
+
+
+@router.get("/chart-data")
+async def get_chart_data(db: Session = Depends(get_db)) -> Dict:
+    """Return chart data from the latest imported request logs."""
+    if db is None:
+        return {"error_rate_trend": [], "latencies": []}
+
+    logs = db.query(LogEntry).filter(
+        LogEntry.source == "nginx",
+        LogEntry.http_status.isnot(None),
+    ).order_by(LogEntry.timestamp.asc()).all()
+
+    if not logs:
+        return {"error_rate_trend": [], "latencies": []}
+
+    buckets = {}
+    for log in logs:
+        timestamp = log.timestamp
+        bucket = timestamp.replace(minute=0, second=0, microsecond=0)
+        if bucket not in buckets:
+            buckets[bucket] = {"requests": 0, "errors": 0}
+        buckets[bucket]["requests"] += 1
+        if log.http_status >= 400:
+            buckets[bucket]["errors"] += 1
+
+    error_rate_trend = [
+        {
+            "timestamp": timestamp.isoformat(),
+            "error_rate": round(values["errors"] / values["requests"], 4),
+        }
+        for timestamp, values in buckets.items()
+    ]
+    latencies = [log.response_time for log in logs if log.response_time is not None]
+
+    return {
+        "error_rate_trend": error_rate_trend,
+        "latencies": latencies,
+    }
 
 @router.get("/metrics-snapshot")
 async def get_metrics_snapshot(db: Session = Depends(get_db)) -> MetricsSnapshot:
     """
     Get current system metrics snapshot (last 1 minute)
     """
-    now = datetime.utcnow()
+    now = datetime.now(timezone.utc)
     one_minute_ago = now - timedelta(minutes=1)
     
     if db is None:
@@ -34,6 +75,16 @@ async def get_metrics_snapshot(db: Session = Depends(get_db)) -> MetricsSnapshot
             disk_percent=58.5
         )
     
+    latest_log = db.query(LogEntry.timestamp).filter(
+        LogEntry.http_status.isnot(None)
+    ).order_by(desc(LogEntry.timestamp)).first()
+    latest_timestamp = latest_log[0] if latest_log else None
+    if latest_timestamp and latest_timestamp.tzinfo is None:
+        latest_timestamp = latest_timestamp.replace(tzinfo=timezone.utc)
+    if latest_timestamp and latest_timestamp < one_minute_ago:
+        now = latest_timestamp
+        one_minute_ago = now - timedelta(minutes=1)
+
     processor = MetricsProcessor(db)
     
     # Aggregate across all components
@@ -80,7 +131,7 @@ async def get_component_health(db: Session = Depends(get_db)) -> Dict:
     """
     components = ['nginx', 'gunicorn', 'uvicorn', 'application']
     
-    now = datetime.utcnow()
+    now = datetime.now(timezone.utc)
     five_mins_ago = now - timedelta(minutes=5)
     
     if db is None:
@@ -117,6 +168,16 @@ async def get_component_health(db: Session = Depends(get_db)) -> Dict:
         }
         return health_status
     
+    latest_log = db.query(LogEntry.timestamp).filter(
+        LogEntry.http_status.isnot(None)
+    ).order_by(desc(LogEntry.timestamp)).first()
+    latest_timestamp = latest_log[0] if latest_log else None
+    if latest_timestamp and latest_timestamp.tzinfo is None:
+        latest_timestamp = latest_timestamp.replace(tzinfo=timezone.utc)
+    if latest_timestamp and latest_timestamp < five_mins_ago:
+        now = latest_timestamp
+        five_mins_ago = now - timedelta(minutes=5)
+
     processor = MetricsProcessor(db)
     
     health_status = {}

@@ -137,6 +137,10 @@
             background: #ef4444;
         }
 
+        .status-no_data {
+            background: #22c55e;
+        }
+
         .status-info {
             flex: 1;
         }
@@ -182,6 +186,11 @@
             flex-direction: column;
             align-items: center;
             justify-content: center;
+        }
+
+        .chart-svg {
+            width: 100%;
+            height: 320px;
         }
 
         .incidents-table {
@@ -460,8 +469,7 @@
 
                 for (const [component, health] of Object.entries(data)) {
                     const statusClass = `status-${health.status}`;
-                    const indicator = health.status === 'healthy' ? '✓' : 
-                                    health.status === 'critical' ? '✕' : '!';
+                    const indicator = health.status === 'critical' ? '✕' : '✓';
 
                     const html = `
                         <div class="status-item">
@@ -524,11 +532,66 @@
             }
         }
 
+        function renderCharts(data) {
+            const errorChart = document.getElementById('chart-error-trend');
+            const points = data.error_rate_trend || [];
+
+            if (points.length) {
+                const width = 900;
+                const height = 280;
+                const padding = 32;
+                const maxRate = Math.max(...points.map(point => point.error_rate), 0.01);
+                const chartWidth = width - padding * 2;
+                const chartHeight = height - padding * 2;
+                const line = points.map((point, index) => {
+                    const x = padding + (index / Math.max(points.length - 1, 1)) * chartWidth;
+                    const y = height - padding - (point.error_rate / maxRate) * chartHeight;
+                    return `${x.toFixed(1)},${y.toFixed(1)}`;
+                }).join(' ');
+
+                errorChart.innerHTML = `
+                    <svg class="chart-svg" viewBox="0 0 ${width} ${height}" role="img" aria-label="Error rate trend">
+                        <line x1="${padding}" y1="${height - padding}" x2="${width - padding}" y2="${height - padding}" stroke="#475569" />
+                        <polyline points="${line}" fill="none" stroke="#f97316" stroke-width="3" />
+                        ${points.map((point, index) => {
+                            const x = padding + (index / Math.max(points.length - 1, 1)) * chartWidth;
+                            const y = height - padding - (point.error_rate / maxRate) * chartHeight;
+                            return `<circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="4" fill="#fb923c"><title>${(point.error_rate * 100).toFixed(1)}%</title></circle>`;
+                        }).join('')}
+                    </svg>
+                    <p>${points.length} hourly data points loaded</p>
+                `;
+            } else {
+                errorChart.innerHTML = '<p>No error-rate data available.</p>';
+            }
+
+            const latencyChart = document.getElementById('chart-latency');
+            if (data.latencies && data.latencies.length) {
+                const values = data.latencies;
+                const maximum = Math.max(...values);
+                latencyChart.innerHTML = `<p>${values.length} response-time samples loaded (max ${maximum.toFixed(0)} ms)</p>`;
+            } else {
+                latencyChart.innerHTML = '<p>Latency data unavailable: imported logs contain no response-time values.</p>';
+            }
+        }
+
+        async function loadCharts() {
+            try {
+                const response = await fetch('/api/dashboard/chart-data');
+                renderCharts(await response.json());
+            } catch (error) {
+                document.getElementById('chart-error-trend').innerHTML = '<p>Unable to load chart data.</p>';
+                document.getElementById('chart-latency').innerHTML = '<p>Unable to load chart data.</p>';
+                console.error('Failed to load charts:', error);
+            }
+        }
+
         // Initialize dashboard
         function initializeDashboard() {
             loadMetricsSnapshot();
             loadComponentHealth();
             loadRecentIncidents();
+            loadCharts();
 
             // Refresh every 30 seconds
             setInterval(loadMetricsSnapshot, 30000);
