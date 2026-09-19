@@ -82,11 +82,11 @@ WSGI_APPLICATION = 'ecommerce.wsgi.application'
 DATABASES = {
     'default': {
         'ENGINE': 'django.db.backends.postgresql',
-        'NAME': os.getenv('DB_NAME', 'ecom_prod_catalog'),
-        'USER': os.getenv('DB_USER', 'vikas'),
-        'PASSWORD': os.getenv('DB_PASSWORD', 'kalika1667'),
-        'HOST': os.getenv('DB_HOST', 'localhost'),
-        'PORT': os.getenv('DB_PORT', '5432'),
+        'NAME': os.environ['DB_NAME'],
+        'USER': os.environ['DB_USER'],
+        'PASSWORD': os.environ['DB_PASSWORD'],
+        'HOST': os.environ['DB_HOST'],
+        'PORT': os.environ['DB_PORT'],
     }
 }
 
@@ -168,7 +168,7 @@ USE_X_FORWARDED_HOST = True
 USE_X_FORWARDED_PORT = True
 
 # Set to True for production with HTTPS
-SECURE_SSL_REDIRECT = True  # Enable in production
+SECURE_SSL_REDIRECT = os.getenv('SECURE_SSL_REDIRECT', 'true').lower() in ('true', '1', 'yes')
 SESSION_COOKIE_SECURE = True  # Cookies only over HTTPS
 CSRF_COOKIE_SECURE = True     # CSRF cookies only over HTTPS
 
