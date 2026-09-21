@@ -72,7 +72,7 @@ Connect to PostgreSQL and run the following SQL commands to set up the database 
 CREATE DATABASE ecom_prod_catalog;
 
 -- Create a user with a secure password
-CREATE USER vikas WITH PASSWORD 'kalika1667';
+CREATE USER vikas WITH PASSWORD '<set-a-strong-password>';
 
 -- Grant all privileges on the database to the new user
 GRANT ALL PRIVILEGES ON DATABASE ecom_prod_catalog TO vikas;
@@ -193,11 +193,11 @@ Inside the `psql` shell, execute the following commands.
 
 ```sql
 -- Set a password for the default postgres user
-\password postgres -- (e.g., enter 'kalika1667')
+\password postgres -- enter the password interactively
 
 -- Create the application database and user
 CREATE DATABASE ecom_prod_catalog;
-CREATE USER vikas WITH PASSWORD 'kalika1667';
+CREATE USER vikas WITH PASSWORD '<set-a-strong-password>';
 
 -- Grant connection privileges
 GRANT CONNECT ON DATABASE ecom_prod_catalog TO vikas;
